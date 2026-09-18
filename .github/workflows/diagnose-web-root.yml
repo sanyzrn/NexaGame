@@ -1,0 +1,61 @@
+name: Diagnose hosting web root
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-web-root.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_PORT: ${{ secrets.FTP_PORT }}
+    steps:
+      - name: Compare live default page, explicit index and new unique file
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FTP_SERVER:?Missing FTP_SERVER}"
+          : "${FTP_USERNAME:?Missing FTP_USERNAME}"
+          : "${FTP_PASSWORD:?Missing FTP_PASSWORD}"
+          port="${FTP_PORT:-21}"
+          probe="nexagame-path-diagnostic-${GITHUB_RUN_ID}.html"
+          marker="nexa-fresh-file-${GITHUB_RUN_ID}"
+          printf '<!doctype html><html><head><title>%s</title></head><body>%s</body></html>\n' "$marker" "$marker" > "$RUNNER_TEMP/$probe"
+          cleanup() {
+            curl --ipv4 --silent --show-error --ssl-reqd --connect-timeout 12 --max-time 25 \
+              --user "$FTP_USERNAME:$FTP_PASSWORD" --quote "-DELE $probe" \
+              --list-only --output /dev/null "ftp://${FTP_SERVER}:${port}/" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          echo 'Root index filenames (no contents):'
+          curl --ipv4 --silent --show-error --fail --ssl-reqd --connect-timeout 12 --max-time 30 \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" --list-only "ftp://${FTP_SERVER}:${port}/" \
+            | grep -Ei '^index\.(html?|php)$|^\.htaccess$' || true
+          echo 'Uploading a uniquely named diagnostic HTML only...'
+          curl --ipv4 --silent --show-error --fail --ssl-reqd --connect-timeout 12 --max-time 40 \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" --upload-file "$RUNNER_TEMP/$probe" \
+            "ftp://${FTP_SERVER}:${port}/${probe}"
+          for path in "/${probe}" '/index.html' '/?v=2' '/index.html?v=2' '/'; do
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            code=$(curl --silent --show-error --location --max-time 30 --connect-timeout 12 \
+              -H 'Cache-Control: no-cache, no-store' -H 'Pragma: no-cache' \
+              -D "$headers" -o "$body" -w '%{http_code}' "https://game.realmetaverse.ir${path}") || code=NETWORK_ERROR
+            echo "PATH: $path | HTTP: $code"
+            if grep -Fq "$marker" "$body"; then echo 'BODY: freshly uploaded unique file';
+            elif grep -Fq '<title>NexaGame | NexaFly</title>' "$body"; then echo 'BODY: new NexaFly app';
+            elif grep -Fq 'NexaGame | اتصال امن' "$body" || grep -Fq 'زیرساخت بازی آماده' "$body"; then echo 'BODY: old authentication splash screen';
+            else echo 'BODY: unknown/other'; fi
+            grep -iE '^(server|age|cache-control|x-cache|x-litespeed-cache|cf-cache-status|location|content-type):' "$headers" | tail -8 || true
+            rm -f "$body" "$headers"
+          done
+          echo 'Diagnostic complete. Temporary file deletion attempted; existing site files unchanged.'
