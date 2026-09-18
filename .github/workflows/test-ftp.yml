@@ -1,0 +1,78 @@
+name: Test hosting connection
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-ftps:
+    name: Check DirectAdmin FTPS (no upload)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_PORT: ${{ secrets.FTP_PORT }}
+    steps:
+      - name: Validate secrets and hostname
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in FTP_SERVER FTP_USERNAME FTP_PASSWORD; do
+            if [[ -z "${!key}" ]]; then
+              echo "Missing GitHub Actions secret: $key" >&2
+              exit 1
+            fi
+          done
+          if [[ ! "$FTP_SERVER" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo 'FTP_SERVER must be a bare hostname or IP, without protocol, port, or directory.' >&2
+            exit 1
+          fi
+          port="${FTP_PORT:-21}"
+          if [[ ! "$port" =~ ^[0-9]{1,5}$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); then
+            echo 'Invalid FTP_PORT (default: 21).' >&2
+            exit 1
+          fi
+          echo "FTP configuration fields present; testing encrypted FTPS on port $port."
+      - name: Verify DNS, TLS, credentials and directory listing
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${FTP_PORT:-21}"
+          echo 'Testing from a GitHub-hosted runner outside your hosting provider...'
+          # A directory listing is read-only. Never reveal directory names or credentials.
+          set +e
+          curl --ipv4 --silent --show-error --fail --ssl-reqd \
+            --connect-timeout 12 --max-time 40 \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" \
+            --list-only --output /dev/null \
+            "ftp://${FTP_SERVER}:${port}/"
+          result=$?
+          set -e
+          case "$result" in
+            0)
+              echo 'SUCCESS: external access, encrypted FTPS, login and directory listing work.'
+              echo '✅ External FTPS connection and read-only login succeeded. Upload permission was NOT tested.' >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            6)
+              echo 'DNS FAILURE: check FTP_SERVER hostname.' >&2
+              exit 1 ;;
+            7|28)
+              echo 'NETWORK FAILURE/TIMEOUT: check FTP host, port, firewall, or international IP filtering. Not proof of geo-blocking.' >&2
+              exit 1 ;;
+            60)
+              echo 'TLS CERTIFICATE FAILURE: fix hosting certificate or use its correct FTP hostname. Do not disable verification.' >&2
+              exit 1 ;;
+            67)
+              echo 'LOGIN FAILURE: check FTP_USERNAME and FTP_PASSWORD, or account restrictions.' >&2
+              exit 1 ;;
+            64)
+              echo 'FTPS TLS REQUIRED: server might not support encrypted FTP. Enable FTPS or use SFTP instead; never downgrade to plain FTP.' >&2
+              exit 1 ;;
+            *)
+              echo "FTPS TEST FAILED (curl code $result). Review server FTPS/passive-mode settings and job logs. No files were uploaded." >&2
+              exit 1 ;;
+          esac
