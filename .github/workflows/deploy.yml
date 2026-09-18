@@ -31,41 +31,47 @@ jobs:
       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       FTP_PORT: ${{ secrets.FTP_PORT }}
     steps:
-      - name: Check out the tested main branch
+      - name: Check out main
         uses: actions/checkout@v4
 
-      - name: Prepare distributable (Vite or existing static page)
+      - name: Prepare distributable
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f package.json ]]; then
-            if [[ ! -f package-lock.json ]]; then
-              echo 'A package-lock.json is required for reproducible Vite deployment.' >&2
-              exit 1
-            fi
-            echo 'Building the TypeScript + React + Vite application...'
-          else
-            echo 'Deploying the current static HTML while the game is being developed.'
+          if [[ ! -f package.json ]]; then
             mkdir -p dist
             cp index.html dist/index.html
+          else
+            echo 'Vite application detected; build follows.'
           fi
 
-      - name: Set up Node.js for the Vite project
+      - name: Set up Node.js
         if: hashFiles('package.json') != ''
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
       - name: Build Vite application
         if: hashFiles('package.json') != ''
         shell: bash
         run: |
           set -euo pipefail
-          npm ci
+          if [[ ! -f package-lock.json ]]; then
+            echo 'Bootstrapping initial lockfile; commit the generated lockfile after the first successful build.'
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          fi
+          npm ci --no-audit --no-fund
           npm run build
 
-      - name: Publish only dist files via encrypted FTPS
+      - name: Preserve initial dependency lockfile
+        if: hashFiles('package.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexagame-package-lock
+          path: package-lock.json
+          retention-days: 3
+
+      - name: Publish only dist files over encrypted FTPS
         shell: bash
         run: |
           set -euo pipefail
@@ -85,8 +91,6 @@ jobs:
             echo 'Missing or empty dist/index.html; refusing to deploy.' >&2
             exit 1
           fi
-          # This FTP account's root was previously verified to map to
-          # https://game.realmetaverse.ir/. Never sync/delete remote files.
           count=0
           while IFS= read -r -d '' file; do
             relative="${file#dist/}"
@@ -108,4 +112,4 @@ jobs:
           curl --silent --show-error --fail --location --retry 3 \
             --connect-timeout 12 --max-time 35 \
             'https://game.realmetaverse.ir/' | grep -q 'NexaGame'
-          echo '✅ HTTPS site responded with the expected NexaGame page.' >> "$GITHUB_STEP_SUMMARY"
+          echo '✅ HTTPS site responded with the NexaGame page.' >> "$GITHUB_STEP_SUMMARY"
