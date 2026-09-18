@@ -1,0 +1,66 @@
+name: Verify game hosting directory
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-web-root:
+    name: Verify FTPS upload reaches game subdomain
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_PORT: ${{ secrets.FTP_PORT }}
+    steps:
+      - name: Upload a temporary, unique test file and verify HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FTP_SERVER:?Missing FTP_SERVER}"
+          : "${FTP_USERNAME:?Missing FTP_USERNAME}"
+          : "${FTP_PASSWORD:?Missing FTP_PASSWORD}"
+          if [[ ! "$FTP_SERVER" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo 'FTP_SERVER must be a hostname or IP without protocol or directory.' >&2
+            exit 1
+          fi
+          port="${FTP_PORT:-21}"
+          if [[ ! "$port" =~ ^[0-9]{1,5}$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); then
+            echo 'Invalid FTP_PORT.' >&2
+            exit 1
+          fi
+          probe="nexagame-deploy-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          expected="NexaGame deployment path check ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n' "$expected" > "$RUNNER_TEMP/$probe"
+          cleanup() {
+            # Only remove this run's uniquely named temporary file. Never delete website files.
+            curl --ipv4 --silent --show-error --ssl-reqd \
+              --connect-timeout 12 --max-time 25 \
+              --user "$FTP_USERNAME:$FTP_PASSWORD" \
+              --quote "-DELE $probe" --list-only --output /dev/null \
+              "ftp://${FTP_SERVER}:${port}/" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          echo 'Checking FTPS write permission with a harmless temporary text file...'
+          curl --ipv4 --silent --show-error --fail --ssl-reqd \
+            --connect-timeout 12 --max-time 45 \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" \
+            --upload-file "$RUNNER_TEMP/$probe" \
+            "ftp://${FTP_SERVER}:${port}/${probe}"
+          echo 'Upload succeeded. Checking that FTP root maps to game.realmetaverse.ir...'
+          actual="$(curl --silent --show-error --fail --location \
+            --connect-timeout 12 --max-time 35 \
+            "https://game.realmetaverse.ir/${probe}")" || {
+              echo 'FTPS write succeeded, but the temporary file is NOT reachable at the game URL. Check FTP account directory, site document root, HTTPS, and hosting firewall.' >&2
+              exit 1
+            }
+          if [[ "$actual" != "$expected" ]]; then
+            echo 'Public URL returned different content. FTP account probably points to the wrong directory or a cache/rewrite intercepted the request.' >&2
+            exit 1
+          fi
+          echo 'SUCCESS: external FTPS write access and game subdomain document root verified.'
+          echo '✅ FTPS upload, write permission, and https://game.realmetaverse.ir/ web-root match verified. Test file cleanup attempted.' >> "$GITHUB_STEP_SUMMARY"
