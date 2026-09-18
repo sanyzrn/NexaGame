@@ -1,0 +1,10 @@
+# Never commit the Telegram bot token or Supabase secret/service-role keys.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+node_modules/
+dist/
+build/
+.DS_Store
