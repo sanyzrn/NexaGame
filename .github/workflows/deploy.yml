@@ -1,0 +1,111 @@
+name: Deploy NexaGame
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'src/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - 'tsconfig*.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexagame-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_PORT: ${{ secrets.FTP_PORT }}
+    steps:
+      - name: Check out the tested main branch
+        uses: actions/checkout@v4
+
+      - name: Prepare distributable (Vite or existing static page)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f package.json ]]; then
+            if [[ ! -f package-lock.json ]]; then
+              echo 'A package-lock.json is required for reproducible Vite deployment.' >&2
+              exit 1
+            fi
+            echo 'Building the TypeScript + React + Vite application...'
+          else
+            echo 'Deploying the current static HTML while the game is being developed.'
+            mkdir -p dist
+            cp index.html dist/index.html
+          fi
+
+      - name: Set up Node.js for the Vite project
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Build Vite application
+        if: hashFiles('package.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Publish only dist files via encrypted FTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FTP_SERVER:?Missing FTP_SERVER secret}"
+          : "${FTP_USERNAME:?Missing FTP_USERNAME secret}"
+          : "${FTP_PASSWORD:?Missing FTP_PASSWORD secret}"
+          if [[ ! "$FTP_SERVER" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo 'FTP_SERVER must be a bare hostname or IP.' >&2
+            exit 1
+          fi
+          port="${FTP_PORT:-21}"
+          if [[ ! "$port" =~ ^[0-9]{1,5}$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); then
+            echo 'Invalid FTP_PORT.' >&2
+            exit 1
+          fi
+          if [[ ! -s dist/index.html ]]; then
+            echo 'Missing or empty dist/index.html; refusing to deploy.' >&2
+            exit 1
+          fi
+          # This FTP account's root was previously verified to map to
+          # https://game.realmetaverse.ir/. Never sync/delete remote files.
+          count=0
+          while IFS= read -r -d '' file; do
+            relative="${file#dist/}"
+            curl --ipv4 --silent --show-error --fail --ssl-reqd \
+              --connect-timeout 12 --max-time 90 --retry 2 \
+              --ftp-create-dirs \
+              --user "$FTP_USERNAME:$FTP_PASSWORD" \
+              --upload-file "$file" \
+              "ftp://${FTP_SERVER}:${port}/${relative}"
+            count=$((count + 1))
+          done < <(find dist -type f -print0 | sort -z)
+          echo "Uploaded $count production files over FTPS."
+          echo "✅ Uploaded $count build files to the verified game web root." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check live HTTPS page
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --fail --location --retry 3 \
+            --connect-timeout 12 --max-time 35 \
+            'https://game.realmetaverse.ir/' | grep -q 'NexaGame'
+          echo '✅ HTTPS site responded with the expected NexaGame page.' >> "$GITHUB_STEP_SUMMARY"
