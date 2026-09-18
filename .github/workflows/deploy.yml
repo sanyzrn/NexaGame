@@ -105,11 +105,34 @@ jobs:
           echo "Uploaded $count production files over FTPS."
           echo "✅ Uploaded $count build files to the verified game web root." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Check live HTTPS page
+      - name: Verify the actual new game instead of the old splash screen
         shell: bash
         run: |
           set -euo pipefail
-          curl --silent --show-error --fail --location --retry 3 \
+          expected='<title>NexaGame | NexaFly</title>'
+          if ! grep -Fq "$expected" dist/index.html; then
+            echo '::error::Built HTML does not contain the expected NexaFly version marker.'
+            exit 1
+          fi
+          echo 'Checking a fresh, cache-busted URL from the GitHub runner...'
+          fresh="$(curl --silent --show-error --fail --location --retry 3 \
             --connect-timeout 12 --max-time 35 \
-            'https://game.realmetaverse.ir/' | grep -q 'NexaGame'
-          echo '✅ HTTPS site responded with the NexaGame page.' >> "$GITHUB_STEP_SUMMARY"
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "https://game.realmetaverse.ir/?nexa_deploy=${GITHUB_SHA}")"
+          if [[ "$fresh" != *"$expected"* ]]; then
+            echo '::error::The cache-busted HTTPS URL still serves the old page or another file. Check hosting cache, rewrite rules, and web root.'
+            echo '❌ The server did not serve the newly deployed NexaFly HTML even after cache busting.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo 'Cache-busted URL contains the new game HTML.'
+          echo 'Checking the normal Telegram Mini App URL...'
+          normal="$(curl --silent --show-error --fail --location --retry 3 \
+            --connect-timeout 12 --max-time 35 \
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            'https://game.realmetaverse.ir/')"
+          if [[ "$normal" != *"$expected"* ]]; then
+            echo '::error::The regular site URL is stale even though cache-busted HTML is current. Clear the host/CDN HTML cache and update the Telegram Mini App URL version.'
+            echo '❌ Fresh URL is current, but the regular site URL is cached/stale.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo '✅ New NexaFly HTML is live at both the normal and cache-busted URLs.' >> "$GITHUB_STEP_SUMMARY"
