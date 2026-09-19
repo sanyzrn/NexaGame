@@ -1,0 +1,61 @@
+name: Diagnose stale game page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-stale-page.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_PORT: ${{ secrets.FTP_PORT }}
+    steps:
+      - name: Test a brand-new HTML filename without changing index.html
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FTP_SERVER:?Missing FTP_SERVER}"
+          : "${FTP_USERNAME:?Missing FTP_USERNAME}"
+          : "${FTP_PASSWORD:?Missing FTP_PASSWORD}"
+          port="${FTP_PORT:-21}"
+          page="nexafly-${GITHUB_SHA:0:12}.html"
+          local_file="$(mktemp)"
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          trap 'rm -f "$local_file" "$headers" "$body"' EXIT
+          echo 'Downloading the NEW production HTML from the FTPS account...'
+          curl --ipv4 --silent --show-error --fail --ssl-reqd --connect-timeout 12 --max-time 45 \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" \
+            --output "$local_file" "ftp://${FTP_SERVER}:${port}/index.html"
+          if ! grep -Fq '<title>NexaGame | NexaFly</title>' "$local_file"; then
+            echo '::error::FTP index.html is not NexaFly. Refusing to publish a preview.'
+            exit 1
+          fi
+          echo "Uploading a NEW filename ($page) without modifying or deleting any site files..."
+          curl --ipv4 --silent --show-error --fail --ssl-reqd --connect-timeout 12 --max-time 45 \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" \
+            --upload-file "$local_file" "ftp://${FTP_SERVER}:${port}/${page}"
+          url="https://game.realmetaverse.ir/${page}"
+          echo 'Fetching the brand-new filename over HTTPS...'
+          if ! curl --silent --show-error --fail --location --connect-timeout 12 --max-time 40 \
+            -H 'Cache-Control: no-cache' -D "$headers" -o "$body" "$url"; then
+            echo '::error::The new HTML filename is not reachable over HTTPS. Check routing or document root.'
+            exit 1
+          fi
+          if ! grep -Fq '<title>NexaGame | NexaFly</title>' "$body"; then
+            echo '::error::Even the brand-new filename serves wrong HTML. Suspect rewrite/proxy/web root, not ordinary browser cache.'
+            exit 1
+          fi
+          echo '✅ The NEW filename serves NexaFly. The old index.html URL is stale due to a path-specific cache or rewrite.'
+          echo "✅ Fresh URL: ${url}" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Do not consider the normal Telegram URL fixed until it serves the new HTML too.' >> "$GITHUB_STEP_SUMMARY"
