@@ -1,16 +1,26 @@
 import Phaser from 'phaser';
 import { CALLIGRAPHY_FONT, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
+import { SCHOOLS, type School } from '../config/team';
+import { readStartParam } from '../services/links';
 import { services } from '../services';
 import type { GroupMember } from '../services/GameService';
 import { avatarColor, avatarTex } from '../ui/avatar';
 import { Button } from '../ui/Button';
-import { dividerTex, gradientText, groupBannerTex, shineTex, speakerTex } from '../ui/kit';
+import { dividerTex, gradientText, groupBannerTex, parchmentTex, schoolEmblemTex, shineTex, speakerTex } from '../ui/kit';
 import { faNum } from '../utils/fa';
 import type { GameScene } from './GameScene';
 
 const LOGO_Y = 540;
-const BUTTON_Y = 1330;
+const SCHOOL_Y = 1050;
+const BUTTON_Y = 1420;
+
+/** What each school's power does, in a line (the picker explains why a group needs all three). */
+const SCHOOL_LINES: Record<School, string> = {
+  rostami: '«خشم رستم»: زمین را می‌لرزاند و زره دیو را می‌شکند',
+  arashi: '«چشم عقاب»: سه تیر طلایی، بی‌خطا بر نقطه‌ضعف‌ها',
+  simorghi: '«بال سیمرغ»: جان می‌بخشد و زنجیرهٔ لشکر را بالا می‌برد',
+};
 
 /**
  * Title overlay. The world behind it is the real arena, held at dusk by the Game scene (camera up
@@ -24,6 +34,12 @@ export class TitleScene extends Phaser.Scene {
   private t = 0;
   private logo!: Phaser.GameObjects.Container;
   private layer: Phaser.GameObjects.GameObject[] = [];
+  private schoolCards: { school: School; c: Phaser.GameObjects.Container; ring: Phaser.GameObjects.Image }[] = [];
+  private schoolLine!: Phaser.GameObjects.Text;
+  private eyeZone: Phaser.GameObjects.Arc | null = null;
+  private eyeTaps = 0;
+  private eyeWoke = false;
+  private readonly eyeP = { x: 0, y: 0 };
 
   constructor() {
     super('Title');
@@ -35,8 +51,14 @@ export class TitleScene extends Phaser.Scene {
     this.layer = [];
     const ins = services.safeArea.designInsets(this.scale.canvasBounds, DESIGN_W, 1920);
     const top = Math.round(ins.top);
+    this.schoolCards = [];
+    this.eyeTaps = 0;
+    this.eyeWoke = false;
     this.buildLogo();
+    this.buildSchools();
     this.buildButton();
+    this.buildInvite();
+    this.buildEyes();
     this.buildSound(top);
     void this.buildChip(top);
     void this.buildBest();
@@ -47,6 +69,11 @@ export class TitleScene extends Phaser.Scene {
   update(_t: number, delta: number): void {
     this.t += Math.min(delta, 50);
     if (this.started) return;
+    // The secret's hit zone follows the Div's eyes as the camera drifts.
+    if (this.eyeZone) {
+      const game = this.scene.get('Game') as GameScene;
+      if (game.titleEyesOnScreen(this.eyeP)) this.eyeZone.setPosition(this.eyeP.x, this.eyeP.y);
+    }
     // Parallax against the camera's slow drift: the logo floats a touch the other way.
     const F = FEEL.title;
     const phase = (this.t / F.driftMs) * Math.PI * 2;
@@ -102,6 +129,109 @@ export class TitleScene extends Phaser.Scene {
     }).catch(() => undefined);
   }
 
+  // ---------------------------------------------------------------- the school picker
+
+  /**
+   * Three medallions: رستمی، آرشی، سیمرغی. The chosen one is lifted, ringed in gold and its power
+   * is described underneath; the choice is saved and decides the power orb's power in the fight.
+   */
+  private buildSchools(): void {
+    const order: School[] = ['rostami', 'arashi', 'simorghi'];
+    const caption = this.add.text(DESIGN_W / 2, SCHOOL_Y - 130, 'مکتب پهلوانی‌ات را برگزین', {
+      fontFamily: FONT_FAMILY, fontSize: '32px', fontStyle: '900', color: '#ffe8b0', rtl: true, stroke: '#2a1204', strokeThickness: 6,
+    }).setOrigin(0.5).setAlpha(0);
+    this.layer.push(caption);
+    this.tweens.add({ targets: caption, alpha: 1, duration: 500, delay: 1200 });
+    order.forEach((school, i) => {
+      const x = DESIGN_W / 2 + (1 - i) * 250; // right to left
+      const ring = this.add.image(0, 0, 'fx_ring').setTint(0xffd24a).setBlendMode(Phaser.BlendModes.ADD).setScale(1.3).setAlpha(0);
+      const emblem = this.add.image(0, 0, schoolEmblemTex(this, school)).setScale(0.85);
+      const name = this.add.text(0, 86, SCHOOLS[school].name, {
+        fontFamily: FONT_FAMILY, fontSize: '32px', fontStyle: '900', color: '#fff0c8', rtl: true, stroke: '#1a0e04', strokeThickness: 6,
+      }).setOrigin(0.5);
+      // Container hit shapes are measured from its top-left corner: size + default rectangle = centred.
+      const c = this.add.container(x, SCHOOL_Y + 20, [ring, emblem, name]).setSize(200, 250).setAlpha(0).setScale(0.6);
+      ring.setY(-20);
+      emblem.setY(-20);
+      name.setY(66);
+      c.setInteractive({ useHandCursor: true });
+      c.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.pickSchool(school, true));
+      this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 500, delay: 1250 + i * 90, ease: 'Back.easeOut' });
+      this.schoolCards.push({ school, c, ring });
+      this.layer.push(c);
+    });
+    this.schoolLine = this.add.text(DESIGN_W / 2, SCHOOL_Y + 160, '', {
+      fontFamily: FONT_FAMILY, fontSize: '28px', fontStyle: '900', color: '#f6e7c8', rtl: true, stroke: '#1a0e04', strokeThickness: 5,
+    }).setOrigin(0.5).setAlpha(0);
+    this.layer.push(this.schoolLine);
+    this.time.delayedCall(1500, () => this.pickSchool(services.settings.school, false));
+  }
+
+  private pickSchool(school: School, byTap: boolean): void {
+    if (this.started) return;
+    services.settings.setSchool(school);
+    for (const card of this.schoolCards) {
+      const on = card.school === school;
+      this.tweens.killTweensOf([card.c, card.ring]);
+      this.tweens.add({ targets: card.c, scale: on ? 1.12 : 0.9, alpha: on ? 1 : 0.7, y: SCHOOL_Y + 20 - (on ? 14 : 0), duration: 260, ease: 'Back.easeOut' });
+      card.ring.setAlpha(on ? 0.9 : 0);
+      if (on) this.tweens.add({ targets: card.ring, alpha: { from: 0.9, to: 0.45 }, duration: 900, yoyo: true, repeat: -1 });
+    }
+    this.schoolLine.setText(SCHOOL_LINES[school]).setAlpha(0);
+    if (this.schoolLine.width > DESIGN_W - 80) this.schoolLine.setScale((DESIGN_W - 80) / this.schoolLine.width);
+    else this.schoolLine.setScale(1);
+    this.tweens.add({ targets: this.schoolLine, alpha: 1, duration: 260 });
+    if (byTap) {
+      services.audio.unlock();
+      services.audio.play(school === 'rostami' ? 'drum' : school === 'arashi' ? 'golden' : 'featherChime');
+      services.haptics.play('light');
+    }
+  }
+
+  // ---------------------------------------------------------------- a friend sent you here
+
+  /** Opened from a challenge or an invite: a parchment ribbon says who, and what to beat. */
+  private buildInvite(): void {
+    const p = readStartParam(services.telegram.startParam);
+    if (!p) return;
+    const text = p.kind === 'challenge'
+      ? `${p.name} تو را به چالش کشید: رکوردش ${faNum(p.score)}`
+      : `${p.from} تو را به لشکر فراخواند!`;
+    const t = this.add.text(0, 0, text, { fontFamily: FONT_FAMILY, fontSize: '32px', fontStyle: '900', color: '#3a1a08', rtl: true }).setOrigin(0.5);
+    const w = Math.min(980, Math.round(t.width) + 110);
+    if (t.width > w - 90) t.setScale((w - 90) / t.width);
+    const c = this.add.container(DESIGN_W / 2, BUTTON_Y + 250, [this.add.image(0, 0, parchmentTex(this, w, 96)), t]).setAlpha(0);
+    this.tweens.add({ targets: c, alpha: 1, y: { from: BUTTON_Y + 300, to: BUTTON_Y + 250 }, duration: 600, delay: 1700, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: c, angle: { from: -1.2, to: 1.2 }, duration: 1600, yoyo: true, repeat: -1, delay: 2300, ease: 'Sine.easeInOut' });
+    this.layer.push(c);
+  }
+
+  // ---------------------------------------------------------------- the secret
+
+  /** Hidden: tap the White Div's glowing eyes three times and he wakes. */
+  private buildEyes(): void {
+    if (!FEEL.surprises.divEyes.enabled) return;
+    this.eyeZone = this.add.circle(0, 0, 70, 0xffffff, 0).setInteractive();
+    this.eyeZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
+      if (this.started || this.eyeWoke) return;
+      const game = this.scene.get('Game') as GameScene;
+      this.eyeTaps++;
+      const wake = this.eyeTaps >= FEEL.surprises.divEyes.taps;
+      game.pokeTitleEyes(wake);
+      services.haptics.play(wake ? 'heavy' : 'light');
+      if (!wake) return;
+      this.eyeWoke = true;
+      this.tweens.add({ targets: this.logo, alpha: 0.25, duration: 300, yoyo: true, hold: 3200 });
+      const line = gradientText(this.add.text(DESIGN_W / 2, LOGO_Y + 10, 'کیست که خواب دیو سپید را آشفت؟', {
+        fontFamily: CALLIGRAPHY_FONT, fontSize: '64px', rtl: true, stroke: '#1a0404', strokeThickness: 6,
+        padding: { top: 30, bottom: 44, left: 20, right: 20 },
+      }).setOrigin(0.5).setAlpha(0).setScale(0.7), ['#ffe0d0', '#ff8a6a', '#b0201a']);
+      this.tweens.add({ targets: line, alpha: 1, scale: 1, duration: 500, delay: 250, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: line, alpha: 0, y: LOGO_Y - 30, duration: 700, delay: 3200, onComplete: () => line.destroy() });
+      this.tweens.add({ targets: this.logo, x: `+=${14}`, duration: 50, yoyo: true, repeat: 5 });
+    });
+  }
+
   // ---------------------------------------------------------------- «نبرد!»
 
   private buildButton(): void {
@@ -120,7 +250,7 @@ export class TitleScene extends Phaser.Scene {
   private async buildBest(): Promise<void> {
     const p = await services.game.getProfile();
     if (!this.sys.isActive() || this.started || p.bestScore <= 0) return;
-    const t = this.add.text(DESIGN_W / 2, BUTTON_Y + 150, `رکورد تو: ${faNum(p.bestScore)}`, {
+    const t = this.add.text(DESIGN_W / 2, BUTTON_Y + 145, `رکورد تو: ${faNum(p.bestScore)}`, {
       fontFamily: FONT_FAMILY, fontSize: '34px', fontStyle: '900', color: '#ffe8b0', rtl: true, stroke: '#2a1204', strokeThickness: 6,
     }).setOrigin(0.5).setAlpha(0);
     this.tweens.add({ targets: t, alpha: 1, duration: 500, delay: 1400 });
@@ -168,7 +298,8 @@ export class TitleScene extends Phaser.Scene {
       return this.add.image(x, 0, avatarTex(this, m)).setDisplaySize(60, 60).setData('c', avatarColor(m));
     });
     const chip = this.add.container(DESIGN_W - 36, 92 + top, [bg, ...avatars.reverse(), nameT, countT]).setSize(w, h).setAlpha(0);
-    chip.setInteractive(new Phaser.Geom.Rectangle(-w, -h / 2, w, h), Phaser.Geom.Rectangle.Contains);
+    // The chip is drawn leftward from its anchor; hit shapes are measured from the container's top-left.
+    chip.setInteractive(new Phaser.Geom.Rectangle(-w / 2, 0, w, h), Phaser.Geom.Rectangle.Contains);
     this.tweens.add({ targets: chip, alpha: 1, x: { from: DESIGN_W + 200, to: DESIGN_W - 36 }, duration: 600, delay: 1300, ease: 'Back.easeOut' });
     // Tap: the members hop one by one, like a roll call.
     chip.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
@@ -189,6 +320,7 @@ export class TitleScene extends Phaser.Scene {
     services.audio.unlock();
     services.audio.play('battle');
     services.haptics.play('heavy');
+    this.eyeZone?.disableInteractive();
     const game = this.scene.get('Game') as GameScene;
     // The UI lifts away (faster than the world: parallax) while the camera dives.
     this.tweens.add({ targets: this.logo, y: this.logo.y - 420, alpha: 0, scale: 1.15, duration: 700, ease: 'Cubic.easeIn' });

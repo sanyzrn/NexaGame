@@ -13,7 +13,7 @@ interface TgHapticFeedback {
 
 interface TgWebApp {
   initData: string;
-  initDataUnsafe: { user?: { id?: number; first_name?: string; last_name?: string; username?: string } };
+  initDataUnsafe: { user?: { id?: number; first_name?: string; last_name?: string; username?: string }; start_param?: string };
   version: string;
   platform: string;
   colorScheme: 'light' | 'dark';
@@ -32,6 +32,7 @@ interface TgWebApp {
   onEvent(event: string, cb: () => void): void;
   offEvent(event: string, cb: () => void): void;
   HapticFeedback?: TgHapticFeedback;
+  BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   /** Bot API 8.0: device safe area (notch, home bar), and Telegram's own controls inside it (fullscreen). */
   safeAreaInset?: Insets;
   contentSafeAreaInset?: Insets;
@@ -88,6 +89,27 @@ export class TelegramBridge {
 
   get userFirstName(): string | null {
     return (this.isTelegram && this.webApp!.initDataUnsafe.user?.first_name) || null;
+  }
+
+  /** The Mini App's start parameter (t.me/bot/app?startapp=…), null outside Telegram. */
+  get startParam(): string | null {
+    return (this.isTelegram && this.webApp!.initDataUnsafe.start_param) || null;
+  }
+
+  /**
+   * Shows Telegram's own back button (top left of the Mini App) and calls `cb` when it's pressed.
+   * Returns a function that hides it again. No-op outside Telegram (6.1+).
+   */
+  backButton(cb: () => void): () => void {
+    const wa = this.webApp;
+    const bb = wa && this.isTelegram && wa.isVersionAtLeast('6.1') ? wa.BackButton : undefined;
+    if (!bb) return () => {};
+    bb.onClick(cb);
+    bb.show();
+    return () => {
+      bb.offClick(cb);
+      bb.hide();
+    };
   }
 
   get userId(): string | null {

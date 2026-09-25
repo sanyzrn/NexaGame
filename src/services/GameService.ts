@@ -46,6 +46,8 @@ export interface ShareRequest {
   heroName: string;
   groupName: string;
   damage: number;
+  /** The run's score: the share becomes a challenge («رکوردم را بزن») with this to beat. */
+  score: number;
   /** PNG data URL of the rendered Hero Card (a backend can upload it and prepare a Telegram message). */
   cardDataUrl?: string;
 }
@@ -108,6 +110,8 @@ export interface GroupSession {
   addPlayerDamage(amount: number, crit: boolean): number;
   /** Teammates' damage outside the activity feed (the volley), chain applied; returns it. */
   addAllyDamage(member: GroupMember, amount: number): number;
+  /** The player's Simorghi power lifts the group's chain; returns true if the tier rose. */
+  raiseChain(): boolean;
   /** Someone answers the call for help (null = nobody can). Commits a 'rescue' activity. */
   requestRescue(): GroupMember | null;
   close(): void;

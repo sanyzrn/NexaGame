@@ -2,7 +2,7 @@
 
 A playable vertical slice of a Telegram Mini App archery game: Phaser 3, TypeScript and Vite.
 
-**Status: M5. The full loop: a title screen over the arena at dusk, a hands-on first-play tutorial, three waves, the White Div and the team finisher, fought alongside a simulated group, then the Result screen, the Hero Card and sharing.**
+**Status: M5.5. The full loop (title, tutorial, waves, the White Div, the team finisher, Result, Hero Card and sharing), plus school powers, challenge and invite links, and rare surprises. See [REVIEW.md](REVIEW.md) for the review, the power design and the list of surprises.**
 Next: M6 (performance pass and deploy).
 
 ## Run
@@ -49,6 +49,26 @@ The pause menu has **Effects: full / light**. Light halves every particle count 
 - **Result:** after a victory, light floods in with slow god-rays; after a defeat, a quiet dusk with words that point forward («پایان نبرد»). The panel slides up, then the stats count up one by one with ticks (score, best combo, golden hits, golden-window accuracy, damage to the group Div). 1–3 stars stamp down with sparkles (rules in `BALANCE.stars`), and a «رکورد تازه!» stamp marks a new best. The group Div bar drains by your share, and «سهم تو از پیروزی لشکر: X٪» counts up. Tap anywhere to hurry. Buttons: «دوباره», «کارت افتخار», «دعوت هم‌رزم» (Telegram share sheet with text + link; the clipboard in other browsers).
 - **Hero Card:** 1080×1920 on `card_bg`, drawn with Canvas 2D with all text live: your name (Telegram first name or «پهلوان»), an epic line chosen by performance (`src/data/lines.ts`), the hero in a gold halo beside the group's banner, the stars, three stat medallions, the group row, and a red «بی‌نقص» seal for a flawless run. It flips in with a gold flash and a light sweep, then a real `<img>` is laid over it, so inside Telegram it can be long-pressed and saved. «اشتراک کارت» goes through `GameService.prepareShare()`: today the Telegram share sheet with text + link; with a backend, a prepared message that carries the image (`WebApp.shareMessage`). Outside Telegram it uses the native share sheet (with the image when supported) and «دانلود تصویر» saves the PNG.
 - **Surprise: teammates reply (`FEEL.reactions.enabled`).** After the stars land, two teammates answer in Telegram-style chat bubbles: typing dots first, then a line that fits your run (a long combo, golden accuracy, being rescued, a defeat…). A flawless run gets the whole group's crown cheer, sent from the group banner, with confetti. Tap a bubble to send a heart back.
+
+## School powers
+
+Pick a school on the title: رستمی, آرشی or سیمرغی. The **power orb** (bottom left) fills mostly from golden hits, topped up by kills, combo milestones and trick shots. When it glows, **tap** it to fire. A touch that turns into a drag, or a long hold, does nothing, so it never interferes with aiming.
+
+- **رستمی «خشم رستم»:** a quake races up the floor. It hurts, knocks back and dazes every enemy it reaches, and shatters an armoured Div's barrier.
+- **آرشی «چشم عقاب»:** reticles lock onto up to three targets (the Div's gem first), then three golden arrows plunge onto them.
+- **سیمرغی «بال سیمرغ»:** the wings sweep the arena. You get a heart back and a ward against the next lunge, the group's chain rises a tier, and enemies slow down.
+
+Numbers are in `BALANCE.power`; visuals, including the palettes that would become "power skins", are in `FEEL.powers`.
+
+## Challenge and invite links
+
+The Hero Card share carries a challenge («رکوردم را بزن»: score + name); «دعوت هم‌رزم» carries an invite. Both travel in Telegram's start parameter. A friend who opens one sees who sent them on the title, and the Result tells them whether they beat the score. For real Telegram deep links, build with the bot's username (and the Mini App's short name, if it has one):
+
+```bash
+VITE_TG_BOT=YourBot VITE_TG_APP=darafsh npm run build
+```
+
+Without them, links point at the page itself with `?startapp=…`, which the game reads the same way (handy for testing in a browser).
 
 ## Team feel (simulated group)
 
@@ -115,6 +135,8 @@ All gameplay numbers live in `src/config/balance.ts`. Times are in ms and distan
 | `waves` | `startDelayMs`, `betweenMs`, `sideMargin`, `loopHpScale` |
 | `chain` | `multipliers` (×1, ×1.2, ×1.5, ×2), `durationMs` per tier, `hitExtendMs` / `critExtendMs`, `dropRefill` |
 | `rescue` | `hearts` restored (1), `shieldMs` (invulnerable shimmer), `clearRadius` |
+| `power` | meter gains (golden, kill, combo step, trick shot), the tap rule, and each power's damage, stun, push, arrows, heal, ward, slow and chain lift |
+| `surprises` | golden imp chance, hp, speed and group bonus; Homa chance and timing; fleeing combo and chance; flame bow streak and duration |
 | `score`, `stars` | score weights (damage, kill, best combo, golden hit, victory, hearts left); star thresholds (golden accuracy, best combo, hearts lost) |
 
 The mock group lives in `src/config/team.ts`: `SCHOOLS` (names, colours), `MOCK_GROUP` (members, who is already in the fight, the group Div's hp) and `MOCK_PACING` (how often teammates act, damage per school, crit odds, the odds of each activity).
@@ -141,6 +163,8 @@ Every animation, lighting and particle number lives in `src/config/feel.ts`. All
 | `chain`, `combo`, `hearts` | chain flame size/colour/glow/embers per tier, warning blink; combo tiers, flames, text colours, shatter; heart layout and refill |
 | `rescue`, `volley` | rescue slow-mo, dim, spirit timing; the volley's trigger (danger zone, cooldown, max per run), arrows, arc, damage (`volley.enabled` is the surprise's flag) |
 | `title`, `tutorial` | title camera zoom/focus/drift, dusk colours, embers, the flight in (push, sweep), button pulse, shine; ghost-finger loop and idle wait, golden-step tries |
+| `powers` | orb position, title time, the power skin in use; per power: name, palettes, anticipation, slow motion, quake speed and cracks, lock-on gap, wing sweep, feathers |
+| `surprises` | on/off flag and look for each surprise: trick shots, golden imp, Homa, fleeing imps, flame bow, the title's Div-eyes secret |
 | `result`, `reactions` | flood, panel slide, count-up speed and tick rate, star gap, group drain; the teammates' replies (`reactions.enabled` is M5's surprise flag), typing time, confetti |
 
 ## Performance and particle budget
@@ -154,7 +178,8 @@ Everything is pooled: arrows (12), damage numbers (24), rings, and every particl
 ## Debug overlay
 
 Toggle it with a **3-finger tap** (phone), `` ` `` / `D` (desktop), or start with `?debug=1` in the URL.
-It shows FPS, renderer, charge percentage and phase, the last shot's damage, wave and enemy counts, hearts and combo, live particles, walls (cyan: bounce, red: absorb), the spawn (purple) and attack (orange) lines, pillar rects, hitboxes, flying arrows, and the list of missing assets.
+It shows FPS, renderer, charge percentage and phase, the last shot's damage, wave and enemy counts, hearts and combo, the power meter, live particles, walls (cyan: bounce, red: absorb), the spawn (purple) and attack (orange) lines, pillar rects, hitboxes, flying arrows, and the list of missing assets.
+Keys while it is on: `H` hurt, `B` boss now, `N` boss −15%, `P` power full, `G` golden imp, `J` the Homa, `K` flame bow.
 
 ## Architecture
 
@@ -178,8 +203,10 @@ src/
     Volley.ts             the teammates' volley (surprise)
     Tutorial.ts           the hands-on first-play tutorial (ghost finger, golden step, ricochet hint)
     score.ts              score, stars, epic line and reaction picks (pure, unit tested)
+    Powers.ts, powerMeter.ts   the three school powers; the meter (pure, unit tested)
+    Surprises.ts          trick-shot calls, the Homa, fleeing imps' alarm, the flame bow
   entities/               Hero, Boss (idle White Div), Decor (pillars, braziers, banners, pots), Enemy (pooled, all three types)
-  services/               TelegramBridge, Haptics, Settings, SafeArea, Share, GameService + MockGameService + MockGroupSession, chain.ts (pure, unit tested)
+  services/               TelegramBridge, Haptics, Settings, SafeArea, Share, links (deep links, start parameters), GameService + MockGameService + MockGroupSession, chain.ts (pure, unit tested)
   ui/                     kit (code-drawn panels, buttons, ribbons, toggles, banners, ornaments), Button + Toggle, DamageNumbers,
                           GroupBar, GoldStream, TeamToasts, SparkFlight, ChainBadge, ComboBadge, Hearts, RescueSpirit, avatar,
                           GhostFinger, HeroCard (Canvas 2D renderer)

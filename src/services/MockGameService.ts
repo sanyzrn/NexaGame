@@ -1,5 +1,6 @@
 import { MOCK_GROUP } from '../config/team';
 import { faNum } from '../utils/fa';
+import { appLink, encodeStartParam } from './links';
 import { storage } from '../utils/storage';
 import { Chain } from './chain';
 import type {
@@ -51,17 +52,14 @@ export class MockGameService implements GameService {
   }
 
   async prepareShare(request: ShareRequest): Promise<ShareTicket> {
-    const text = `${request.heroName} در «درفش» ${faNum(request.damage)} آسیب به دیو سپید زد! ⚔️ به «${request.groupName}» بپیوند.`;
-    return { kind: 'link', url: this.appUrl(), text };
+    const text = `${request.heroName} در «درفش» ${faNum(request.score)} امتیاز گرفت و ${faNum(request.damage)} آسیب به دیو سپید زد! ⚔️ رکوردش را می‌زنی؟`;
+    const param = encodeStartParam({ kind: 'challenge', score: request.score, name: request.heroName });
+    return { kind: 'link', url: appLink(param), text };
   }
 
   async prepareInvite(groupName: string): Promise<ShareTicket> {
+    const from = this.telegram.userFirstName ?? 'یک هم‌رزم';
     const text = `هم‌رزم! «${groupName}» در «درفش» با دیو سپید می‌جنگد. بیا با هم شکستش بدهیم 🏹`;
-    return { kind: 'link', url: this.appUrl(), text };
-  }
-
-  /** The Mini App's own link (Telegram's share sheet needs an https URL; outside Telegram, this page). */
-  private appUrl(): string {
-    return location.href.split('#')[0].split('?')[0];
+    return { kind: 'link', url: appLink(encodeStartParam({ kind: 'invite', from })), text };
   }
 }

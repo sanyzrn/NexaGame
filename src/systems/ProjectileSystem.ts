@@ -52,6 +52,10 @@ export interface FireOptions {
   homing?: () => Point | null;
   /** The Simorgh's feather arrow: turquoise trail, passes through small fry. */
   feather?: boolean;
+  /** Plunges onto its target from above (the Arashi power): shields can't meet it head-on. */
+  fromAbove?: boolean;
+  /** The flame bow's fiery trail (a style reward; no gameplay change). */
+  flame?: boolean;
 }
 
 export interface ArrowHit {
@@ -75,6 +79,9 @@ export interface ArrowEndEvent {
   y: number;
   /** Enemies this arrow hit during its flight (0 = a miss, for the combo). */
   hits: number;
+  /** Of those, how many it killed, and how many times it had ricocheted by the end (trick shots). */
+  kills: number;
+  bounces: number;
 }
 
 const enum Mode { Idle, Flying, Stuck, Deflected, Fading }
@@ -105,6 +112,9 @@ interface Arrow {
   trailCarry: number;
   homing: (() => Point | null) | null;
   feather: boolean;
+  fromAbove: boolean;
+  flame: boolean;
+  kills: number;
 }
 
 const POOL = 12;
@@ -117,7 +127,7 @@ export class ProjectileSystem {
   private readonly arrows: Arrow[] = [];
   private readonly sh: StaticHit = { t: 0, nx: 0, ny: 0, kind: 'wall', bounces: false };
   private readonly hit: HitEvent = { damage: 0, crit: false, x: 0, y: 0, dirX: 0, dirY: 0, bounces: 0, target: null!, outcome: 'hit' };
-  private readonly end: ArrowEndEvent = { kind: 'expired', x: 0, y: 0, hits: 0 };
+  private readonly end: ArrowEndEvent = { kind: 'expired', x: 0, y: 0, hits: 0, kills: 0, bounces: 0 };
 
   constructor(
     scene: Phaser.Scene,
@@ -130,6 +140,7 @@ export class ProjectileSystem {
       this.arrows.push({
         img, mode: Mode.Idle, active: false, timer: 0, rot: 0, spin: 0, vx: 0, vy: 0, x: 0, y: 0, dx: 0, dy: -1, speed: 0, damage: 0, crit: false,
         pierceLeft: 0, bounces: 0, life: 0, hits: 0, hitIds: [], trailCarry: 0, homing: null, feather: false,
+        fromAbove: false, flame: false, kills: 0,
       });
     }
   }
@@ -149,6 +160,9 @@ export class ProjectileSystem {
     const a = this.freeArrow();
     a.homing = opts?.homing ?? null;
     a.feather = opts?.feather ?? false;
+    a.fromAbove = opts?.fromAbove ?? false;
+    a.flame = opts?.flame ?? false;
+    a.kills = 0;
     a.mode = Mode.Flying;
     a.active = true;
     a.x = x;
@@ -269,7 +283,7 @@ export class ProjectileSystem {
 
       const nx = a.x + a.dx * travel;
       const ny = a.y + a.dy * travel;
-      a.trailCarry = this.fx.trail(a.x, a.y, nx, ny, a.crit, a.trailCarry, a.feather);
+      a.trailCarry = this.fx.trail(a.x, a.y, nx, ny, a.crit, a.trailCarry, a.feather, a.flame);
       a.x = nx;
       a.y = ny;
       remaining -= travel;
@@ -277,9 +291,10 @@ export class ProjectileSystem {
       if (target) {
         a.hitIds.push(target.id);
         const h = this.hit;
-        h.damage = a.damage; h.crit = a.crit; h.x = a.x; h.y = a.y; h.dirX = a.dx; h.dirY = a.dy; h.bounces = a.bounces;
+        h.damage = a.damage; h.crit = a.crit; h.x = a.x; h.y = a.y; h.dirX = a.dx; h.dirY = a.fromAbove ? Math.abs(a.dy) : a.dy; h.bounces = a.bounces;
         const outcome = target.receiveArrow(h);
         if (outcome === 'hit' || outcome === 'kill') a.hits++;
+        if (outcome === 'kill') a.kills++;
         h.target = target;
         h.outcome = outcome;
         this.onHit.emit(h);
@@ -340,7 +355,7 @@ export class ProjectileSystem {
     }
     a.img.setPosition(a.x, a.y);
     const e = this.end;
-    e.kind = kind; e.x = a.x; e.y = a.y; e.hits = a.hits;
+    e.kind = kind; e.x = a.x; e.y = a.y; e.hits = a.hits; e.kills = a.kills; e.bounces = a.bounces;
     this.onEnd.emit(e);
   }
 }

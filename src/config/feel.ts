@@ -407,6 +407,63 @@ export const FEEL = {
     confetti: 70,
   },
 
+  // ---------------------------------------------------------------- school powers (M5.5)
+
+  /**
+   * One power per school, fired from the power orb (bottom left) once its ring is full. Each plays
+   * anticipation → action → impact → aftermath. `palettes` are the sellable "power skins": the
+   * same power, re-coloured (and later re-textured); `skin` picks the one in use.
+   */
+  powers: {
+    button: { x: 118, y: 1792, r: 76 },
+    /** The power's name, in calligraphy, over the arena. */
+    titleMs: 1000,
+    skin: 'default' as 'default' | 'shahi',
+    rostami: {
+      name: 'خشم رستم',
+      palettes: { default: [0xff5a2a, 0xffb040], shahi: [0xb04aff, 0xffd24a] } as Record<string, readonly [number, number]>,
+      anticipationMs: 520,
+      slowMo: 0.3,
+      /** How fast the quake's front crosses the arena (px/ms). */
+      frontPxPerMs: 1.6,
+      cracks: 9,
+      crackFadeMs: 1700,
+      shake: { ms: 520, intensity: 0.016 },
+    },
+    arashi: {
+      name: 'چشم عقاب',
+      palettes: { default: [0xffd24a, 0xfff4c0], shahi: [0x5ff0ff, 0xffffff] } as Record<string, readonly [number, number]>,
+      anticipationMs: 520,
+      slowMo: 0.18,
+      /** Reticles lock on one by one. */
+      lockGapMs: 170,
+    },
+    simorghi: {
+      name: 'بال سیمرغ',
+      palettes: { default: [0x3ce8c8, 0xb8fff0], shahi: [0xff7ab8, 0xfff0f8] } as Record<string, readonly [number, number]>,
+      anticipationMs: 560,
+      sweepMs: 1300,
+      feathers: 14,
+    },
+  },
+
+  // ---------------------------------------------------------------- surprises (M5.5)
+
+  surprises: {
+    /** A kill after a ricochet: «تیر کمانه‌ای!»; two ricochets: «کمانهٔ دوگانه!» with slow motion. Two kills with one arrow: «یک تیر، دو دیو!». */
+    trickShot: { enabled: true, slowMo: 0.3, slowMs: 480 },
+    /** Rare: a golden imp dashes across the arena, shedding sparkle. Catch it for a shower of gold. */
+    goldenImp: { enabled: true, y: 880, coins: 36 },
+    /** Very rare: the Homa, bird of fortune, glides over; its shadow crossing the hero is a blessing. */
+    homa: { enabled: true, crossMs: 5200, scale: 1.1, auraMs: 9000 },
+    /** At a big combo, fresh imps sometimes see the carnage and run for it. */
+    fleeing: { enabled: true },
+    /** Five golden releases in a row: the bow catches fire for a while (style only). */
+    flameBow: { enabled: true },
+    /** Hidden on the title: tap the Div's glowing eyes three times. */
+    divEyes: { enabled: true, taps: 3 },
+  },
+
   /** Phaser FX (glow, barrel, bloom, colour matrix). Only in WebGL, and off with "light effects". */
   shaderFx: true,
 

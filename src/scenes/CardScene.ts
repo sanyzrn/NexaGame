@@ -55,7 +55,11 @@ export class CardScene extends Phaser.Scene {
       this.tweens.add({ targets: b, alpha: 1, y: b.y - 60, duration: 380, delay: 200 + i * 80, ease: 'Back.easeOut' });
     });
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup());
+    const offBack = services.telegram.backButton(() => this.close());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      offBack();
+      this.cleanup();
+    });
     renderHeroCard(this, data.card).then((canvas) => {
       if (this.closing || !this.sys.isActive()) return;
       this.dataUrl = canvas.toDataURL('image/png');
@@ -127,7 +131,7 @@ export class CardScene extends Phaser.Scene {
   private async share(data: { card: HeroCardData; damage: number }): Promise<void> {
     if (!this.dataUrl) return;
     const ticket = await services.game.prepareShare({
-      heroName: data.card.heroName, groupName: data.card.groupName, damage: data.damage, cardDataUrl: this.dataUrl,
+      heroName: data.card.heroName, groupName: data.card.groupName, damage: data.damage, score: data.card.score, cardDataUrl: this.dataUrl,
     });
     const out = await shareTicket(ticket, { dataUrl: this.dataUrl, name: FILE_NAME });
     if (out === 'copied') this.say('متن و لینک کپی شد');

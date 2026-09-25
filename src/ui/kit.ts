@@ -779,6 +779,135 @@ export function bubbleTex(scene: Phaser.Scene, w: number, h: number): string {
   });
 }
 
+// ---------------------------------------------------------------- schools (M5.5)
+
+const SCHOOL_COLORS: Record<string, [string, string]> = {
+  rostami: ['#ff7a4a', '#7a1a08'],
+  arashi: ['#7ab4ff', '#12306a'],
+  simorghi: ['#6af0d0', '#0a5a4a'],
+};
+
+/**
+ * A school's round emblem (160 px): an enamel disc in the school's colour, a gold rim, and its
+ * sign drawn in gold: رستمی an ox-headed mace (گرز گاوسر), آرشی a drawn bow and arrow, سیمرغی a feather.
+ */
+export function schoolEmblemTex(scene: Phaser.Scene, school: 'rostami' | 'arashi' | 'simorghi'): string {
+  return make(scene, `ui_emblem_${school}`, 160, 160, (ctx) => {
+    const c = 80;
+    const [hi, lo] = SCHOOL_COLORS[school];
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    const g = ctx.createRadialGradient(c - 18, c - 22, 6, c, c, 70);
+    g.addColorStop(0, hi);
+    g.addColorStop(1, lo);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(c, c, 68, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = goldStroke(ctx, 10, 150);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,240,190,0.55)';
+    ctx.beginPath();
+    ctx.arc(c, c, 58, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.fillStyle = goldStroke(ctx, -50, 50);
+    ctx.strokeStyle = '#5a3208';
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    if (school === 'rostami') {
+      // Ox-headed mace: shaft, grip, and the bull's head with horns.
+      ctx.rotate(-0.55);
+      ctx.fillRect(-4, -8, 8, 52);
+      ctx.strokeRect(-4, -8, 8, 52);
+      ctx.fillRect(-7, 34, 14, 10);
+      ctx.beginPath();
+      ctx.ellipse(0, -22, 16, 19, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * 12, -32);
+        ctx.quadraticCurveTo(s * 30, -40, s * 26, -54);
+        ctx.quadraticCurveTo(s * 22, -42, s * 6, -38);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#5a3208';
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(s * 6, -24, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (school === 'arashi') {
+      // A drawn bow with the arrow nocked, pointing up-right.
+      ctx.rotate(-0.78);
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = goldStroke(ctx, -50, 50);
+      ctx.beginPath();
+      ctx.arc(-14, 0, 44, -1.15, 1.15);
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#fff4d0';
+      ctx.beginPath();
+      ctx.moveTo(-14 + Math.cos(-1.15) * 44, Math.sin(-1.15) * 44);
+      ctx.lineTo(-30, 0);
+      ctx.lineTo(-14 + Math.cos(1.15) * 44, Math.sin(1.15) * 44);
+      ctx.stroke();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = goldStroke(ctx, -50, 50);
+      ctx.beginPath();
+      ctx.moveTo(-30, 0);
+      ctx.lineTo(44, 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(52, 0);
+      ctx.lineTo(38, -9);
+      ctx.lineTo(38, 9);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // A long feather, its vane feathered on both sides.
+      ctx.rotate(0.5);
+      ctx.beginPath();
+      ctx.moveTo(0, -52);
+      ctx.bezierCurveTo(26, -30, 22, 22, 2, 46);
+      ctx.bezierCurveTo(-20, 20, -24, -28, 0, -52);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = '#5a3208';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -48);
+      ctx.lineTo(1, 56);
+      ctx.stroke();
+      for (let i = 0; i < 6; i++) {
+        const y = -34 + i * 13;
+        ctx.beginPath();
+        ctx.moveTo(1, y);
+        ctx.lineTo(14 - Math.abs(i - 2.5) * 2, y - 8);
+        ctx.moveTo(1, y);
+        ctx.lineTo(-13 + Math.abs(i - 2.5) * 2, y - 8);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#3cc4b4';
+      ctx.beginPath();
+      ctx.ellipse(1, -24, 5, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
 /** A gold eslimi divider: a line fading at both ends, twin curls and a gem at the centre. */
 export function dividerTex(scene: Phaser.Scene, w: number): string {
   return make(scene, `ui_divider_${w}`, w, 40, (ctx) => {

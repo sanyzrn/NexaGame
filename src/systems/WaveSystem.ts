@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { BALANCE } from '../config/balance';
 import { ARENA } from '../data/arena';
 import { WAVES, scheduleWave, type ScheduledSpawn } from '../data/waves';
-import { Enemy, type EnemyHooks, type EnemyWorld } from '../entities/Enemy';
+import { Enemy, type EnemyHooks, type EnemyWorld, type SpawnOptions } from '../entities/Enemy';
 import { Signal } from '../utils/Signal';
 
 export interface WaveInfo {
@@ -103,9 +103,9 @@ export class WaveSystem {
   }
 
   /** One enemy at `x`: from the top edge, or bursting in at `y` (the tutorial's shield-bearer). */
-  spawnOne(type: Enemy['type'], x: number, y?: number): Enemy {
+  spawnOne(type: Enemy['type'], x: number, y?: number, opts?: SpawnOptions): Enemy {
     const e = this.freeEnemy();
-    e.spawn(type, x, 1, y);
+    e.spawn(type, x, 1, y, opts);
     return e;
   }
 

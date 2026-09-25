@@ -4,7 +4,8 @@ import { MANIFEST_BY_KEY, type PackFile } from '../assets/manifest';
 import { CALLIGRAPHY_FONT, FONT_FAMILY } from '../config/display';
 import { services } from '../services';
 import { faNum, faPercent } from '../utils/fa';
-import { groupBannerTex, starPath } from './kit';
+import { SCHOOLS, type School } from '../config/team';
+import { groupBannerTex, schoolEmblemTex, starPath } from './kit';
 
 export interface HeroCardData {
   heroName: string;
@@ -20,6 +21,10 @@ export interface HeroCardData {
   avatars: string[];
   /** Flawless run: the card gets the red seal. */
   perfect: boolean;
+  /** The player's school: its emblem and name by the hero's name. */
+  school: School;
+  /** The Homa's shadow fell on the hero: a golden «هما» medallion (rare, so worth showing off). */
+  homa: boolean;
 }
 
 const W = 1080;
@@ -157,8 +162,12 @@ export async function renderHeroCard(scene: Phaser.Scene, d: HeroCardData): Prom
   ctx.font = `900 ${size}px ${FONT_FAMILY}`;
   while (ctx.measureText(d.heroName).width > INNER.w - 120 && size > 56) ctx.font = `900 ${(size -= 6)}px ${FONT_FAMILY}`;
   text(ctx, d.heroName, 540, 582, `900 ${size}px ${FONT_FAMILY}`, nameFill, '#f3c65a', 5);
-  text(ctx, d.epicLine, 540, 680, `700 50px ${CALLIGRAPHY_FONT}`, CRIMSON);
-  divider(ctx, 750, 560);
+  // The epic line, shrunk to fit the parchment (Nastaliq runs wide).
+  let ls = 50;
+  ctx.font = `700 ${ls}px ${CALLIGRAPHY_FONT}`;
+  while (ctx.measureText(d.epicLine).width > INNER.w - 70 && ls > 32) ctx.font = `700 ${(ls -= 2)}px ${CALLIGRAPHY_FONT}`;
+  text(ctx, d.epicLine, 540, 692, `700 ${ls}px ${CALLIGRAPHY_FONT}`, CRIMSON);
+  divider(ctx, 760, 560);
 
   // The hero in a gold halo, the group's banner planted beside him.
   const halo = ctx.createRadialGradient(540, 1010, 30, 540, 1010, 330);
@@ -246,6 +255,40 @@ export async function renderHeroCard(scene: Phaser.Scene, d: HeroCardData): Prom
     if (!img) continue;
     const x = 540 + (i - (n - 1) / 2) * 62;
     ctx.drawImage(img, x - 26, 1652, 52, 52);
+  }
+
+  // The school's emblem, by the name.
+  const emblem = source(scene, schoolEmblemTex(scene, d.school));
+  if (emblem) ctx.drawImage(emblem, 158, 478, 96, 96);
+  text(ctx, SCHOOLS[d.school].name, 206, 596, `900 24px ${FONT_FAMILY}`, '#6a3a10');
+
+  // The Homa's blessing: a golden medallion with its name.
+  if (d.homa) {
+    // Under the perfect seal (smaller) when both are earned; clear of the epic line either way.
+    const y = d.perfect ? 618 : 530;
+    const k = d.perfect ? 0.72 : 1;
+    ctx.save();
+    ctx.translate(d.perfect ? 890 : 862, y);
+    ctx.scale(k, k);
+    ctx.shadowColor = 'rgba(120,70,0,0.5)';
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 62, 0, Math.PI * 2);
+    ctx.fillStyle = goldFill(ctx, -62, 62);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(d.perfect ? 890 : 862, y);
+    ctx.scale(k, k);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#7a4a08';
+    ctx.beginPath();
+    ctx.arc(0, 0, 50, 0, Math.PI * 2);
+    ctx.stroke();
+    text(ctx, 'هما', 0, -6, `700 44px ${CALLIGRAPHY_FONT}`, '#5a2a04');
+    text(ctx, 'فرخنده', 0, 32, `900 18px ${FONT_FAMILY}`, '#5a2a04');
+    ctx.restore();
   }
 
   // Flawless: a red wax seal, pressed a little crooked.

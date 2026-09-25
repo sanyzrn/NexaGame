@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
+import type { School } from '../config/team';
 import { PERFECT_CHEER } from '../data/lines';
 import { services } from '../services';
 import { shareTicket } from '../services/Share';
@@ -28,6 +29,11 @@ export interface ResultData {
   members: ResultMember[];
   isNewBest: boolean;
   epicLine: string;
+  school: School;
+  /** The Homa's shadow fell on the hero this run. */
+  homa: boolean;
+  /** Opened from a friend's challenge link: their name and score to beat. */
+  challenge: { name: string; score: number } | null;
 }
 
 const PW = 960;
@@ -51,6 +57,7 @@ export class ResultScene extends Phaser.Scene {
   private fast = false;
   private leaving = false;
   private note: Phaser.GameObjects.Container | null = null;
+  private subText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('Result');
@@ -147,7 +154,7 @@ export class ResultScene extends Phaser.Scene {
       fontFamily: FONT_FAMILY, fontSize: '66px', fontStyle: '900', rtl: true,
     }).setOrigin(0.5), won ? ['#5a2a04', '#3a1a02', '#2a1002'] : ['#fff4e0', '#ffd0a0', '#f0a060']));
     const sub = won ? 'دیو سپید در برابر لشکر زانو زد.' : 'دیو هنوز ایستاده؛ لشکر به تیرهای تو امید دارد.';
-    add(this.add.text(cx, top + 100, sub, {
+    this.subText = add(this.add.text(cx, top + 100, sub, {
       fontFamily: FONT_FAMILY, fontSize: '32px', color: '#f3dca0', rtl: true,
     }).setOrigin(0.5));
 
@@ -191,6 +198,7 @@ export class ResultScene extends Phaser.Scene {
       this.tweens.add({ targets: l, x: l.x - 40, duration: this.fast ? 0 : 260, ease: 'Cubic.easeOut' });
       await this.countUp(v, value, fmt, i === 0);
       if (i === 0 && this.d.isNewBest) this.newBest(v);
+      if (i === 0 && this.d.challenge) this.challengeOutcome();
       await this.wait(R.rowGapMs);
     }
   }
@@ -220,6 +228,26 @@ export class ResultScene extends Phaser.Scene {
       t.setText(fmt(value));
       gradientText(t);
       this.tweens.add({ targets: t, scale: { from: 1.25, to: 1 }, duration: 220, ease: 'Back.easeOut' });
+    });
+  }
+
+  /** Opened from a friend's challenge: did the score beat theirs? */
+  private challengeOutcome(): void {
+    const c = this.d.challenge!;
+    const s = this.d.stats.score;
+    const beat = s > c.score;
+    const text = beat ? `از رکورد ${c.name} (${faNum(c.score)}) گذشتی! 🎉` : `تا رکورد ${c.name} ${faNum(c.score - s)} امتیاز مانده`;
+    const t = this.subText;
+    this.tweens.add({
+      targets: t, alpha: 0, duration: 160, onComplete: () => {
+        t.setText(text).setColor(beat ? '#ffe27a' : '#f3dca0').setFontStyle('900');
+        if (t.width > PW - 80) t.setScale((PW - 80) / t.width);
+        this.tweens.add({ targets: t, alpha: 1, scale: { from: t.scale * 1.3, to: t.scale }, duration: 320, ease: 'Back.easeOut' });
+        if (beat) {
+          services.audio.play('newBest');
+          this.sparkle.explode(services.settings.count(16), t.x, t.y + this.panel.y);
+        }
+      },
     });
   }
 
@@ -403,6 +431,8 @@ export class ResultScene extends Phaser.Scene {
       groupShare: Math.min(1, d.stats.groupDamage / Math.max(1, d.groupHpMax - d.groupHp)),
       avatars: d.members.map((m) => m.avatar),
       perfect: isPerfect(d.stats),
+      school: d.school,
+      homa: d.homa,
     };
     this.scene.launch('Card', { card: data, damage: d.stats.groupDamage });
   }

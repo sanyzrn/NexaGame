@@ -113,6 +113,51 @@ export const BALANCE = {
     clearRadius: 560,
   },
 
+  /**
+   * School powers. The meter fills mostly from golden hits, so a power is a reward for the core skill,
+   * never a replacement for it: about three golden hits (plus a few kills) per use.
+   */
+  power: {
+    gain: { golden: 0.3, kill: 0.05, comboStep: 0.08, trickShot: 0.2 },
+    /** Combo milestones that add `comboStep`. */
+    comboEvery: 5,
+    /** A tap on the power button: released within this long and this close counts, a drag doesn't. */
+    tapMaxMs: 450,
+    tapMaxMovePx: 36,
+    rostami: {
+      /** The quake: damage to every enemy it reaches (shields can't stop the ground). */
+      damage: 90,
+      radius: 1250,
+      stunMs: 1300,
+      pushPx: 120,
+      /** Against the Div: damage, and an armoured Div's barrier shatters (he is stunned, as by a golden gem hit). */
+      bossDamage: 260,
+    },
+    arashi: {
+      /** Golden arrows loosed at once, each at its own target (the Div's gem first). */
+      arrows: 3,
+      staggerMs: 90,
+    },
+    simorghi: {
+      heal: 1,
+      /** The next lunge that would cost a heart is turned away. */
+      wardMs: 9000,
+      /** Enemies under the wings walk this much slower, for this long. */
+      slow: 0.5,
+      slowMs: 3500,
+      /** Lifts the whole group's chain one tier. */
+      chainTiers: 1,
+    },
+  },
+
+  /** Surprises that touch gameplay (their looks and on/off flags are in feel.ts). */
+  surprises: {
+    goldenImp: { chancePerWave: 0.22, hp: 40, speed: 330, groupBonus: 1500 },
+    homa: { chancePerRun: 0.1, afterMs: 22000 },
+    fleeing: { combo: 12, chance: 0.3 },
+    flameBow: { goldenStreak: 5, ms: 8000 },
+  },
+
   /** The run's score (Result screen, Hero Card, best score). */
   score: {
     /** Points per point of damage the player dealt (enemies + the Div). */

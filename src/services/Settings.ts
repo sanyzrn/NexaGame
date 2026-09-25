@@ -1,10 +1,13 @@
 import { FEEL } from '../config/feel';
+import type { School } from '../config/team';
 import { Signal } from '../utils/Signal';
 import { storage } from '../utils/storage';
 
 const REDUCED_KEY = 'darafsh.reducedEffects';
 const TUTORIAL_KEY = 'darafsh.tutorialDone';
 const INTRO_KEY = 'darafsh.bossIntroSeen';
+const SCHOOL_KEY = 'darafsh.school';
+const SCHOOLS: readonly School[] = ['rostami', 'arashi', 'simorghi'];
 
 /** Player settings persisted in localStorage. */
 export class Settings {
@@ -35,6 +38,21 @@ export class Settings {
 
   markTutorialDone(): void {
     storage.set(TUTORIAL_KEY, '1');
+  }
+
+  /** The player's school (its power); chosen on the title screen. */
+  get school(): School {
+    const s = storage.get(SCHOOL_KEY) as School | null;
+    return s && SCHOOLS.includes(s) ? s : 'arashi';
+  }
+
+  /** True once the player has picked a school themselves. */
+  get schoolChosen(): boolean {
+    return storage.get(SCHOOL_KEY) !== null;
+  }
+
+  setSchool(s: School): void {
+    storage.set(SCHOOL_KEY, s);
   }
 
   /** The boss intro has played once: from now on a tap skips it. */

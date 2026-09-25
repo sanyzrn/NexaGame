@@ -44,6 +44,13 @@ export class Hero {
   private hasFeather = false;
   private blazing = 0;
   private blazeTarget = 0;
+  // powers & surprises
+  private readonly wardRing: Phaser.GameObjects.Image;
+  private readonly wardGlow: Phaser.GameObjects.Image;
+  private wardLeft = 0;
+  private flameLeft = 0;
+  private charge = 0;
+  private chargeColor = 0xffffff;
 
   constructor(scene: Phaser.Scene, readonly x: number, readonly y: number, private readonly fx: FX) {
     this.body = new BendSprite(scene, x, y, HERO.poses.idle, { rows: 9 });
@@ -60,6 +67,10 @@ export class Hero {
       .setDepth(DEPTH.aim - 3).setVisible(false);
     this.bigArrow = scene.add.image(this.bowX, this.bowY, 'arrow').setRotation(-Math.PI / 2).setTint(0xffe9a0)
       .setDepth(DEPTH.aim - 1).setVisible(false);
+    this.wardGlow = scene.add.image(x, y - 130, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0x5ff0d8)
+      .setDepth(DEPTH.aim - 4).setScale(5.5, 6.5).setVisible(false);
+    this.wardRing = scene.add.image(x, y - 130, 'fx_ring').setTint(0x2fc4a2)
+      .setDepth(DEPTH.aim - 4).setScale(2.3, 2.7).setVisible(false);
   }
 
   /** Still blinking after a hit: further hits are ignored. */
@@ -92,6 +103,44 @@ export class Hero {
     this.bigGlow.setVisible(false);
     this.blazing = this.blazeTarget = 0;
     this.release(true);
+  }
+
+  /** The Simorgh's ward: a turquoise bubble that turns away the next lunge. */
+  ward(ms: number): void {
+    this.wardLeft = ms;
+    this.wardRing.setVisible(true).setAlpha(0).setScale(0.4);
+    this.wardGlow.setVisible(true).setAlpha(0);
+    this.wardRing.scene.tweens.add({ targets: this.wardRing, alpha: 0.9, scaleX: 2.3, scaleY: 2.7, duration: 420, ease: 'Back.easeOut' });
+  }
+
+  get warded(): boolean {
+    return this.wardLeft > 0;
+  }
+
+  /** A lunge hits the ward: it bursts (returns false if there was none). */
+  consumeWard(): boolean {
+    if (this.wardLeft <= 0) return false;
+    this.wardLeft = 0;
+    const r = this.wardRing;
+    r.scene.tweens.add({ targets: r, scaleX: 4, scaleY: 4.6, alpha: 0, duration: 380, ease: 'Cubic.easeOut', onComplete: () => r.setVisible(false) });
+    r.scene.tweens.add({ targets: this.wardGlow, alpha: 0, duration: 380, onComplete: () => this.wardGlow.setVisible(false) });
+    this.fx.goldenBurst(this.x, this.y - 130);
+    return true;
+  }
+
+  /** The flame bow (five golden releases in a row): fire licks the bow for `ms`. */
+  flameBow(ms: number): void {
+    this.flameLeft = ms;
+  }
+
+  get flaming(): boolean {
+    return this.flameLeft > 0;
+  }
+
+  /** A power gathering (anticipation): 0..1 glow in `color` around the hero. */
+  powerCharge(k: number, color: number): void {
+    this.charge = k;
+    this.chargeColor = color;
   }
 
   release(crit: boolean): void {
@@ -127,6 +176,7 @@ export class Hero {
     if (this.hurtLeft > 0) this.hurtLeft -= dt;
     if (this.invulnerableLeft > 0) this.invulnerableLeft -= dt;
     if (this.shimmerLeft > 0) this.shimmerLeft -= dt;
+    this.updateWardFlame(dt);
     this.flick.update(dt);
     this.bowShake.update(dt);
     this.punch = Math.max(0, this.punch - dt / 120);
@@ -207,6 +257,24 @@ export class Hero {
     this.updateAura(dt, charging, golden, aim.state.charge);
   }
 
+  private updateWardFlame(dt: number): void {
+    if (this.wardLeft > 0) {
+      this.wardLeft -= dt;
+      const p = 0.5 + 0.5 * Math.sin(this.t / 260);
+      const fade = Math.min(1, this.wardLeft / 500);
+      this.wardGlow.setAlpha((0.18 + 0.12 * p) * fade);
+      if (!this.wardRing.scene.tweens.isTweening(this.wardRing)) this.wardRing.setAlpha((0.45 + 0.3 * p) * fade).setRotation(this.t / 1400);
+      if (this.wardLeft <= 0) {
+        this.wardRing.setVisible(false);
+        this.wardGlow.setVisible(false);
+      }
+    }
+    if (this.flameLeft > 0) {
+      this.flameLeft -= dt;
+      if (Math.random() < Math.min(1, dt / 30)) this.fx.flameLick(this.bowX, this.bowY - 20);
+    }
+  }
+
   private updateBlaze(dt: number): void {
     this.blazing += (this.blazeTarget - this.blazing) * Math.min(1, dt / 250);
     const z = this.blazing;
@@ -230,6 +298,11 @@ export class Hero {
   private updateAura(dt: number, charging: boolean, golden: boolean, charge: number): void {
     const A = FEEL.hero.aura;
     if (this.blazing > 0.01) return;
+    if (this.charge > 0.01) {
+      // A power gathering: its colour swells around the bow.
+      this.aura.setTint(this.chargeColor).setAlpha(0.9 * this.charge).setScale(1.6 + 2.2 * this.charge + Math.sin(this.t / 45) * 0.2 * this.charge);
+      return;
+    }
     if (golden) {
       const p = 0.5 + 0.5 * Math.sin((this.t / A.pulseMs) * TAU);
       this.aura.setTint(COLORS.gold).setAlpha(A.alpha).setScale(A.scale[0] + (A.scale[1] - A.scale[0]) * p);

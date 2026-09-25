@@ -20,6 +20,14 @@ export interface EnemyHooks {
   shieldRaised(e: Enemy): void;
   lungeStart(e: Enemy): void;
   reachedHero(e: Enemy): void;
+  /** Left the arena without dying (a fleeing imp, the golden imp running off). */
+  escaped?(e: Enemy): void;
+}
+
+/** Special kinds of life (surprises). */
+export interface SpawnOptions {
+  /** The rare golden imp: dashes sideways across the arena at `y`, never toward the hero. */
+  golden?: boolean;
 }
 
 /** What enemies read from the world every frame (filled in place, never reallocated). */
@@ -134,6 +142,17 @@ export class Enemy implements Target {
   private lx1 = 0;
   private ly1 = 0;
   private dashing = false;
+  // powers & surprises
+  /** The rare golden imp (runs across, never attacks). */
+  golden = false;
+  private goldDir = 1;
+  /** Panicked at the player's combo: runs back up and away. */
+  fleeing = false;
+  private stunLeft = 0;
+  private pushLeft = 0;
+  private pushV = 0;
+  private slowLeft = 0;
+  private slowMul = 1;
 
   constructor(scene: Phaser.Scene, private readonly hooks: EnemyHooks) {
     this.img = Art.image(scene, 0, 0, ENEMIES.imp.poses.walk[0]).setVisible(false);
@@ -202,8 +221,11 @@ export class Enemy implements Target {
    * Starts a new life. `burstFromY` (summoned by the boss): it leaps out of a crack in the wall at
    * that height instead of popping out of smoke at the top edge.
    */
-  spawn(type: EnemyType, x: number, hpScale: number, burstFromY?: number): void {
+  spawn(type: EnemyType, x: number, hpScale: number, burstFromY?: number, opts?: SpawnOptions): void {
     const E = FEEL.enemy;
+    this.golden = !!opts?.golden;
+    this.fleeing = false;
+    this.stunLeft = this.pushLeft = this.slowLeft = 0;
     this.type = type;
     this.def = ENEMIES[type];
     this.maxHp = this.hp = this.shownHp = this.trailHp = Math.round(BALANCE.enemies[type].hp * hpScale);
@@ -225,6 +247,13 @@ export class Enemy implements Target {
     }
     this.kbX = this.kbY = this.raise = 0;
     this.raisedCue = this.dashing = false;
+    if (this.golden) {
+      const G = BALANCE.surprises.goldenImp;
+      this.maxHp = this.hp = this.shownHp = this.trailHp = G.hp;
+      this.speed = G.speed;
+      this.goldDir = x < (ARENA.walls.left + ARENA.walls.right) / 2 ? 1 : -1;
+      if (burstFromY !== undefined) this.burstLeft = 0;
+    }
     if (type === 'flyer') {
       const F = FEEL.flyer;
       const m = BALANCE.waves.sideMargin + F.zigPx;
@@ -269,6 +298,42 @@ export class Enemy implements Target {
     if (this.hp > 0) return 'hit';
     this.die(DEATHS[Math.floor(Math.random() * DEATHS.length)], hit.dirX);
     return 'kill';
+  }
+
+  /**
+   * The Rostami quake: knocked back up the arena and dazed for `ms` (a lunge that hasn't struck yet
+   * is broken off).
+   */
+  stagger(ms: number, pushPx: number): void {
+    if (!this.alive) return;
+    if (this.state === State.Lunging && !this.dashing) this.enter(State.Walking);
+    if (this.state === State.Lunging) return;
+    this.stunLeft = Math.max(this.stunLeft, ms);
+    this.pushLeft = 260;
+    this.pushV = pushPx / 0.26;
+    this.squash = 1;
+  }
+
+  /** Under the Simorgh's wings: walks `mul` as fast for `ms`. */
+  slow(ms: number, mul: number): void {
+    if (!this.alive) return;
+    this.slowLeft = Math.max(this.slowLeft, ms);
+    this.slowMul = mul;
+  }
+
+  /** Sees the carnage and runs for it (imps only, before they get close). */
+  flee(): boolean {
+    if (this.type !== 'imp' || this.golden || this.fleeing || !this.alive || this.y > ARENA.attackY - 400) return false;
+    this.fleeing = true;
+    this.pauseLeft = 0;
+    this.squash = 1;
+    return true;
+  }
+
+  /** Walking out of the arena alive. */
+  private escape(): void {
+    this.hooks.escaped?.(this);
+    this.hide();
   }
 
   /** Swept away by the finisher's shockwave: a golden dissolve. */
@@ -316,8 +381,15 @@ export class Enemy implements Target {
         break;
       }
       case State.Walking:
-        this.walk(dt, world);
-        if (this.y >= ARENA.attackY) this.startLunge(world);
+        if (this.pushLeft > 0) {
+          this.pushLeft -= dt;
+          this.y = Math.max(ARENA.spawnY, this.y - (this.pushV * dt) / 1000);
+        }
+        if (this.slowLeft > 0) this.slowLeft -= dt;
+        if (this.stunLeft > 0) this.stunLeft -= dt;
+        else this.walk(this.slowLeft > 0 ? dt * this.slowMul : dt, world);
+        if ((this.state as State) === State.Off) return;
+        if (this.y >= ARENA.attackY && !this.golden) this.startLunge(world);
         break;
       case State.Lunging:
         if (this.updateLunge()) return;
@@ -346,6 +418,21 @@ export class Enemy implements Target {
 
   private walk(dt: number, world: EnemyWorld): void {
     const s = dt / 1000;
+    if (this.golden) {
+      // Dashes across, glittering, and is gone out the far side.
+      this.x += this.goldDir * this.speed * s;
+      this.stepPhase += (this.speed * s) / 26;
+      if (this.x < ARENA.walls.left - 60 || this.x > ARENA.walls.right + 60) this.escape();
+      return;
+    }
+    if (this.fleeing) {
+      // Panicked: back up the arena twice as fast, jittering.
+      this.y -= this.speed * 2.4 * s;
+      this.stepPhase += (this.speed * 2.4 * s) / 20;
+      this.x += Math.sin(this.life / 40) * 60 * s;
+      if (this.y < ARENA.spawnY - 40) this.escape();
+      return;
+    }
     if (this.type === 'flyer') {
       const F = FEEL.flyer;
       this.y += this.speed * s;
@@ -591,6 +678,12 @@ export class Enemy implements Target {
     }
 
     if (this.hitPoseLeft > 0) pose = def.poses.hit;
+    if (this.stunLeft > 0) {
+      // Dazed by the quake: a slow woozy sway.
+      tilt = Math.sin(this.t / 90) * 0.18;
+      bob = 0;
+    }
+    if (this.fleeing) tilt = Math.sin(this.life / 45) * 0.2;
     if (this.burstLeft > 0) {
       // Leaping out of the wall: an arc, tumbling forward.
       const k = 1 - this.burstLeft / FEEL.boss.summon.burstMs;
@@ -622,6 +715,8 @@ export class Enemy implements Target {
 
     Art.setPose(this.img, pose);
     if (this.flashLeft > 0) this.img.setTintFill(0xffffff);
+    else if (this.golden) this.img.setTint(0xffe27a, 0xffe27a, 0xffb020, 0xffb020);
+    else if (this.slowLeft > 0) this.img.setTint(0xb0fff0);
     else this.img.clearTint();
     const s = def.scale * this.popMul;
     this.img.setPosition(ox, oy).setScale(s * (scaleX + sq), s * (scaleY - sq)).setRotation(tilt);

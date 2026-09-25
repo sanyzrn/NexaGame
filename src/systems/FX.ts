@@ -28,6 +28,7 @@ export class FX {
   private readonly trailWhite: Emitter;
   private readonly trailGold: Emitter;
   private readonly trailFeather: Emitter;
+  private readonly trailFlame: Emitter;
   private readonly sparks: Emitter;
   private readonly sparkGold: Emitter;
   private readonly flare: Emitter;
@@ -64,6 +65,11 @@ export class FX {
     this.trailFeather = add('fx_glow', {
       lifespan: 420, scale: { start: 0.9, end: 0 }, alpha: { start: 1, end: 0 },
       tint: [0x5ff0d8, 0xfff0a0, 0x9ffff0], blendMode: 'ADD', maxParticles: 120,
+    }, DEPTH.arrows - 1);
+    this.trailFlame = add('fx_flame', {
+      lifespan: { min: 260, max: 420 }, scale: { start: 0.55, end: 0.1 }, alpha: { start: 0.95, end: 0 },
+      speedY: { min: -60, max: -20 }, rotate: { min: -20, max: 20 },
+      tint: [0xff5a1a, 0xff9a2a, 0xffd24a], blendMode: 'ADD', maxParticles: 140,
     }, DEPTH.arrows - 1);
     this.sparks = add('fx_spark', {
       lifespan: { min: 180, max: 360 }, speed: { min: 180, max: 540 }, scale: { start: 1.1, end: 0 },
@@ -156,10 +162,10 @@ export class FX {
   }
 
   /** Particles along an arrow's travelled segment (spacing-based, so fast arrows leave no gaps). */
-  trail(x0: number, y0: number, x1: number, y1: number, crit: boolean, carry: number, feather = false): number {
+  trail(x0: number, y0: number, x1: number, y1: number, crit: boolean, carry: number, feather = false, flame = false): number {
     const len = Math.hypot(x1 - x0, y1 - y0);
     if (len <= 0) return carry;
-    const e = feather ? this.trailFeather : crit ? this.trailGold : this.trailWhite;
+    const e = feather ? this.trailFeather : flame ? this.trailFlame : crit ? this.trailGold : this.trailWhite;
     const spacing = FEEL.arrow.trailSpacing * (services.settings.reducedEffects ? 1.6 : 1);
     let d = spacing - carry;
     while (d <= len) {
@@ -168,6 +174,11 @@ export class FX {
       d += spacing;
     }
     return len - (d - spacing);
+  }
+
+  /** One lick of flame (the flame bow). */
+  flameLick(x: number, y: number): void {
+    this.trailFlame.emitParticleAt(x + (Math.random() - 0.5) * 30, y + (Math.random() - 0.5) * 20, 1);
   }
 
   /** Impact sparks in the target's colour (+ gold burst and a flare on crits). */

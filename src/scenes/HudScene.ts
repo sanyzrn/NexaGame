@@ -14,6 +14,7 @@ import { ComboBadge } from '../ui/ComboBadge';
 import { GoldStream } from '../ui/GoldStream';
 import { BAR_INNER, GroupBar, PLATE_Y } from '../ui/GroupBar';
 import { Hearts } from '../ui/Hearts';
+import { PowerButton } from '../ui/PowerButton';
 import { RescueSpirit } from '../ui/RescueSpirit';
 import { SparkFlight } from '../ui/SparkFlight';
 import { TeamToasts, type TeamGate } from '../ui/TeamToasts';
@@ -44,6 +45,7 @@ export class HudScene extends Phaser.Scene {
   private session: GroupSession | null = null;
   private joinToken = 0;
   private safeTop = 0;
+  private safeBottom = 0;
   private pause!: Phaser.GameObjects.Image;
   private hearts!: Hearts;
   private combo!: ComboBadge;
@@ -80,12 +82,16 @@ export class HudScene extends Phaser.Scene {
   private barArmorOn = false;
   private barT = 0;
   private offs: (() => void)[] = [];
+  private power!: PowerButton;
+  /** Set at the end of create: the Game scene waits for it before starting the run. */
+  ready = false;
 
   constructor() {
     super('Hud');
   }
 
   create(data?: { hidden?: boolean }): void {
+    this.ready = false;
     this.gameScene = this.scene.get('Game') as GameScene;
     this.ended = false;
     this.skip = null;
@@ -112,6 +118,9 @@ export class HudScene extends Phaser.Scene {
     this.stream = new GoldStream(this, Z.stream, (out) => this.groupBar.edge(out), (payload) => this.streamLanded(payload));
     this.sparks = new SparkFlight(this, Z.spark);
     this.toasts = new TeamToasts(this, Z.toast, () => this.safeTop);
+    this.power = new PowerButton(this, Z.top, services.settings.school, () => this.gameScene.castPower());
+    this.power.root.setVisible(false);
+    this.input.keyboard?.on('keydown-Q', () => this.power.fire());
     this.buildToast();
 
     // Safe areas: notches, and Telegram's own controls in fullscreen.
@@ -128,7 +137,9 @@ export class HudScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => this.openMenu());
 
     this.joinGroup();
+    this.ready = true;
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.ready = false;
       this.offs.forEach((off) => off());
       this.offs = [];
       this.session?.close();
@@ -228,6 +239,15 @@ export class HudScene extends Phaser.Scene {
     return true;
   }
 
+  /** The power meter gained: a spark flies from (x, y) into the orb. */
+  powerSpark(x: number, y: number): void {
+    if (!this.power.root.visible) return;
+    this.sparks.fly(x, y, 0xffd24a, (out) => {
+      out.x = this.power.x;
+      out.y = this.power.y;
+    }, () => this.tweens.add({ targets: this.power.root, scale: { from: 1.12, to: 1 }, duration: 200, ease: 'Back.easeOut' }));
+  }
+
   /** What the player's hits sent to the group Div this run. */
   get groupDamage(): number {
     return this.playerGroupDamage;
@@ -249,7 +269,7 @@ export class HudScene extends Phaser.Scene {
   /** The tutorial's «رد کردن» button, bottom left. */
   showSkip(onSkip: () => void): void {
     if (this.skip) return;
-    const b = new Button(this, 150, DESIGN_H - 90, 230, 84, 'رد کردن', () => {
+    const b = new Button(this, 150, DESIGN_H - 90 - this.safeBottom, 230, 84, 'رد کردن', () => {
       this.hideSkip();
       onSkip();
     }, 'lapis').setDepth(Z.top).setAlpha(0);
@@ -465,6 +485,18 @@ export class HudScene extends Phaser.Scene {
       }
       this.chain.update(ms, s.chain.progress);
     }
+    // The power orb: shown in play once the tutorial is over; follows the meter.
+    const showPower = this.gameScene.powerAvailable && !this.ended;
+    if (showPower !== this.power.root.visible) {
+      this.power.root.setVisible(showPower);
+      if (showPower) this.tweens.add({ targets: this.power.root, scale: { from: 0.3, to: 1 }, alpha: { from: 0, to: 1 }, duration: 420, ease: 'Back.easeOut' });
+    }
+    if (showPower) {
+      // The school may have been picked on the title after this HUD was built.
+      this.power.setSchool(services.settings.school);
+      this.power.setValue(this.gameScene.powerValue);
+      this.power.update(ms);
+    }
     this.groupBar.update(ms);
     this.stream.update(ms);
     this.sparks.update(ms);
@@ -511,6 +543,11 @@ export class HudScene extends Phaser.Scene {
   private applySafeArea(): void {
     const ins = services.safeArea.designInsets(this.scale.canvasBounds, DESIGN_W, DESIGN_H);
     const top = Math.round(ins.top);
+    const bottom = Math.round(ins.bottom);
+    // Bottom row (power orb, skip): above a home bar.
+    this.safeBottom = bottom;
+    this.power?.root.setY(FEEL.powers.button.y - bottom);
+    this.skip?.setY(DESIGN_H - 90 - bottom);
     if (top === this.safeTop && this.pause.y === PAUSE.y + top) return;
     this.safeTop = top;
     this.pause.setY(PAUSE.y + top);

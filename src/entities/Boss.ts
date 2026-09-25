@@ -623,6 +623,24 @@ export class Boss {
     }
   }
 
+  /** Someone woke him (the title's secret): a roar from behind the wall. */
+  poke(): void {
+    if (this.action !== 'none') return;
+    this.startAction('roar', B.roarMs);
+    this.onGrowl.emit();
+  }
+
+  /** The Rostami quake reaches him (barrier shatters if up). Returns the damage he took. */
+  quake(damage: number): number {
+    if (!this.brain.fighting) return 0;
+    this.brain.quake();
+    for (const e of this.brain.events) this.onBrainEvent(e);
+    this.brain.events.length = 0;
+    const p = this.chestPoint(this.q);
+    const hit: ArrowHit = { damage, crit: true, x: p.x, y: p.y, dirX: 1, dirY: 0, bounces: 0 };
+    return this.onArrow(hit) === 'hit' ? hit.damage : 0;
+  }
+
   private onArrow(hit: ArrowHit): HitOutcome {
     const gem = this.throughGem(hit.x, hit.y, hit.dirX, hit.dirY);
     const res = this.brain.hit({ damage: hit.damage, crit: hit.crit, gem });

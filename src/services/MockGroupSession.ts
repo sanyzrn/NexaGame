@@ -95,6 +95,10 @@ export class MockGroupSession implements GroupSession {
     return dmg;
   }
 
+  raiseChain(): boolean {
+    return this.s.chain.raise();
+  }
+
   requestRescue(): GroupMember | null {
     // A Simorghi healer answers first, if one is in the fight.
     const active = this.s.members.filter((m) => m.active);

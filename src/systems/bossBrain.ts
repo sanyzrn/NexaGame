@@ -91,6 +91,18 @@ export class BossBrain {
     return { damage, blocked: false };
   }
 
+  /**
+   * The Rostami power's quake reaches him: an armoured Div's barrier shatters and he is stunned,
+   * exactly as by a golden arrow through the gem. Returns true if it broke the barrier.
+   */
+  quake(): boolean {
+    if (this.state !== 'armor') return false;
+    this.state = 'stunned';
+    this.stunLeft = this.cfg.stunMs;
+    this.events.push('stun');
+    return true;
+  }
+
   tick(dt: number): void {
     if (this.state === 'stunned') {
       this.stunLeft -= dt;

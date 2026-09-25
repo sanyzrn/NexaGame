@@ -68,7 +68,12 @@ export class PauseScene extends Phaser.Scene {
     this.tweens.add({ targets: shamseh, angle: 360, duration: 60000, delay: 700, repeat: -1 });
     this.input.keyboard?.on('keydown-ESC', () => this.close());
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => services.audio.hold(false));
+    // Telegram's own back button resumes, as players expect inside Telegram.
+    const offBack = services.telegram.backButton(() => this.close());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      offBack();
+      services.audio.hold(false);
+    });
     this.dim = dim;
     this.panel = panel;
   }

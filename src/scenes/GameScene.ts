@@ -24,6 +24,10 @@ import { Simorgh } from '../systems/Simorgh';
 import { TeamFinisher } from '../systems/TeamFinisher';
 import { TimeCtl } from '../systems/TimeCtl';
 import { Volley } from '../systems/Volley';
+import { Powers } from '../systems/Powers';
+import { PowerMeter } from '../systems/powerMeter';
+import { Surprises } from '../systems/Surprises';
+import { readStartParam } from '../services/links';
 import { WaveSystem, type WaveInfo } from '../systems/WaveSystem';
 import { DamageNumbers } from '../ui/DamageNumbers';
 import { Tutorial } from '../systems/Tutorial';
@@ -92,6 +96,17 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private heartsLost = 0;
   private reachedBoss = false;
   private ended = false;
+  // Powers & surprises (M5.5)
+  private powers!: Powers;
+  private surprises!: Surprises;
+  private readonly meter = new PowerMeter();
+  private powersUsed = 0;
+  private goldenStreak = 0;
+  private goldenImpDone = false;
+  private homaAt = -1;
+  private homaBlessed = false;
+  /** startRun waits for the HUD (it is relaunched a frame after this scene starts). */
+  private pendingStart = false;
   private finisher: TeamFinisher | null = null;
   private flight: Flight | null = null;
   private volley!: Volley;
@@ -128,6 +143,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.titleT = 0;
     this.shots = this.goldenShots = this.damageDealt = this.heartsLost = 0;
     this.reachedBoss = this.ended = false;
+    this.meter.value = 0;
+    this.powersUsed = this.goldenStreak = 0;
+    this.goldenImpDone = this.homaBlessed = this.pendingStart = false;
+    this.homaAt = -1;
     this.hearts = BALANCE.hero.hearts;
     this.combo = this.bestCombo = this.kills = this.bossDamage = 0;
     this.defeated = this.won = this.simorghDone = false;
@@ -173,9 +192,36 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       },
       onMiss: (x, y) => fx.absorb(x, y),
     });
+    this.surprises = new Surprises(this, {
+      fx, hero: this.hero, timeCtl: this.timeCtl,
+      onHomaBlessing: () => this.homaBlessing(),
+    });
 
     this.scene.launch('Hud', { hidden: this.mode === 'title' });
     const hud = (this.hud = this.scene.get('Hud') as HudScene);
+    this.powers = new Powers(this, {
+      fx, timeCtl: this.timeCtl, atmosphere: this.atmosphere, hero: this.hero, boss: this.boss, decor: this.decor,
+      projectiles: this.projectiles,
+      enemies: () => this.waves.enemies,
+      setAim: (on) => {
+        if (!on) this.aim.cancel();
+        this.aim.enabled = on && this.canAim();
+      },
+      onEnemyHit: (e, damage, outcome) => this.powerHitEnemy(e, damage, outcome),
+      onBossHit: (damage, x, y) => {
+        this.bossDamage += damage;
+        this.damageDealt += damage;
+        this.hud.setBossHp(this.boss.brain.hpPct);
+        this.numbers.spawn(x, y - 40, damage, true);
+        this.feedGroup(x, y, damage, true, false);
+      },
+      heal: (n) => {
+        const before = this.hearts;
+        this.hearts = Math.min(BALANCE.hero.hearts, this.hearts + n);
+        if (this.hearts !== before) this.hud.setHearts(this.hearts);
+      },
+      raiseChain: () => this.hud.group?.raiseChain(),
+    });
     this.aim = new AimSystem(this, launch, (p) => hud.isPointerOverUi(p));
     this.aimView = new AimView(this, this.aim, this.collider, launch, () => this.allTargets());
 
@@ -216,6 +262,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       haptics.play('light');
       this.shots++;
       if (e.shot.crit || this.hero.feathered) this.goldenShots++;
+      this.trackGoldenStreak(e.shot.crit);
       if (this.hero.feathered) {
         // The Simorgh's feather: a guided golden arrow, straight for the gem.
         const shot = shotFor({ charge: 1, phase: 'golden' });
@@ -228,7 +275,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
         audio.play('featherChime');
       } else {
         this.hero.release(e.shot.crit);
-        this.projectiles.fire(launch.x, launch.y, e.dirX, e.dirY, e.shot);
+        this.projectiles.fire(launch.x, launch.y, e.dirX, e.dirY, e.shot, { flame: this.hero.flaming });
       }
       this.lastShot = `${e.shot.damage}${e.shot.crit ? ' CRIT' : ''} @${Math.round(e.charge * 100)}%`;
     });
@@ -240,7 +287,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.projectiles.onEnd.add((e) => this.onArrowEnd(e));
 
     // ---- waves & boss ----
-    this.waves.onWaveStart.add((w) => this.announceWave(w));
+    this.waves.onWaveStart.add((w) => {
+      this.announceWave(w);
+      this.maybeGoldenImp();
+    });
     this.waves.onAllCleared.add(() => this.time.delayedCall(1200, () => this.startBossIntro()));
     this.wireBoss();
 
@@ -254,7 +304,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if (this.mode === 'title') this.enterTitle();
     else {
       this.cameras.main.fadeIn(450, 10, 6, 20);
-      this.startRun();
+      this.pendingStart = true;
     }
   }
 
@@ -297,6 +347,37 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     cam.centerOn(DESIGN_W / 2 + drift, FEEL.title.focusY);
   }
 
+  /** Title secret: where the Div's glowing eyes are on screen (null once the title is over). */
+  titleEyesOnScreen(out: { x: number; y: number }): boolean {
+    if (this.mode !== 'title' || !this.titleEyes.length) return false;
+    let x = 0;
+    let y = 0;
+    for (const e of this.titleEyes) {
+      x += e.x;
+      y += e.y;
+    }
+    const n = this.titleEyes.length;
+    const p = this.toScreen(x / n, y / n);
+    out.x = p.x;
+    out.y = p.y;
+    return true;
+  }
+
+  /** Title secret: a tap on the eyes makes them flare; the last one wakes him with a roar. */
+  pokeTitleEyes(wake: boolean): void {
+    for (const e of this.titleEyes) this.tweens.add({ targets: e, scale: { from: wake ? 2.6 : 1.7, to: 0.9 }, duration: wake ? 900 : 380, ease: 'Cubic.easeOut' });
+    if (!wake) {
+      services.audio.play('growl');
+      return;
+    }
+    this.boss.poke();
+    this.atmosphere.shockwave(0.6, 500);
+    this.decor.gust(this, 1200);
+    this.atmosphere.gust(1200);
+    for (const e of this.embers) e.explode(services.settings.count(20), DESIGN_W / 2, FEEL.title.focusY - 300);
+    services.haptics.play('heavy');
+  }
+
   /** «نبرد!»: a short push toward the wall, then the camera sweeps down into the arena. */
   beginPlay(): void {
     if (this.mode !== 'title') return;
@@ -329,7 +410,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
           onComplete: () => {
             cam.setZoom(1).centerOn(DESIGN_W / 2, DESIGN_H / 2);
             this.mode = 'play';
-            this.startRun();
+            this.pendingStart = true;
           },
         });
       },
@@ -351,6 +432,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   /** The run proper: the tutorial first (first play), then the waves. */
   private startRun(): void {
     this.aim.enabled = true;
+    // Rare: the Homa may glide over this run.
+    if (FEEL.surprises.homa.enabled && Math.random() < BALANCE.surprises.homa.chancePerRun) this.homaAt = BALANCE.surprises.homa.afterMs;
     if (services.settings.tutorialDone) {
       this.waves.start();
       return;
@@ -385,9 +468,21 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
         e.setPosition(src.x, src.y).setAlpha(glow * this.boss.silhouette);
       });
     }
+    if (this.pendingStart && this.hud.ready) {
+      this.pendingStart = false;
+      this.startRun();
+    }
     const aim = this.aim;
     aim.update(realMs);
     this.tutorial?.update(realMs);
+    this.powers.update(realMs);
+    this.surprises.update(realMs);
+    // The golden imp sheds glitter as it runs.
+    for (const e of this.waves.enemies) if (e.golden && e.alive && Math.random() < 0.6) this.fx.sparkleAt(e.bodyX, e.bodyY, 50);
+    if (this.homaAt > 0 && this.runMs >= this.homaAt && this.teamGate() !== 'blocked') {
+      this.homaAt = -1;
+      this.surprises.flyHoma();
+    }
     const golden = aim.charging && aim.state.phase === 'golden';
     if (this.wasGolden && !golden) services.audio.stopHum();
     this.wasGolden = golden;
@@ -561,6 +656,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.damageDealt += e.damage;
       this.hud.setBossHp(boss.brain.hpPct);
       this.feedGroup(e.x, e.y, e.damage, e.crit, false);
+      if (e.crit) this.gainPower('golden', e.x, e.y);
       this.setCombo(this.combo + 1);
       const gem = boss.gemHit;
       const big = gem && e.crit;
@@ -599,6 +695,11 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.damageDealt += e.damage;
     fx.hitSparks(e.x, e.y, e.crit, t.color);
     this.feedGroup(e.x, e.y, e.damage, e.crit, e.outcome === 'kill');
+    if (e.crit) this.gainPower('golden', e.x, e.y);
+    if (e.outcome === 'kill') {
+      this.gainPower('kill', e.x, e.y);
+      if (t.golden) this.goldenImpCaught(t);
+    }
     this.setCombo(this.combo + 1);
     if (e.crit) {
       fx.hitStop();
@@ -640,9 +741,11 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     }
     // An arrow that hit nothing breaks the streak.
     if (e.hits === 0) this.setCombo(0);
+    else if (this.surprises.trickShot(e.kills, e.bounces, e.x, e.y)) this.gainPower('trickShot', e.x, e.y);
   }
 
   private setCombo(n: number): void {
+    if (n > this.combo && this.meter.combo(n) > 0) this.hud.powerSpark(this.hero.bowX, this.hero.bowY);
     this.combo = n;
     this.bestCombo = Math.max(this.bestCombo, n);
     this.hud.setCombo(n);
@@ -820,12 +923,23 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   spawned(e: Enemy): void {
     this.fx.swirl(e.bodyX, e.bodyY, FEEL.particles.spawnSmoke, 34);
     services.audio.play('spawn');
+    // Surprise: at a big combo, a fresh imp may take one look at the carnage and run.
+    const F = BALANCE.surprises.fleeing;
+    if (FEEL.surprises.fleeing.enabled && e.type === 'imp' && !e.golden && this.combo >= F.combo && Math.random() < F.chance) {
+      this.time.delayedCall(1100, () => {
+        if (e.flee()) this.surprises.alarm(e);
+      });
+    }
   }
 
   step(e: Enemy): void {
     this.fx.stepDust(e.x, e.y);
     this.fx.shake('step');
     services.audio.play('step', 0.6);
+  }
+
+  escaped(e: Enemy): void {
+    if (e.golden) this.surprises.call('از دستت در رفت!', DESIGN_W / 2, FEEL.surprises.goldenImp.y - 120, ['#fff4e0', '#ffd0a0', '#c07030'], 46);
   }
 
   taunt(): void {
@@ -854,6 +968,20 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
   private damageHero(): void {
     if (this.defeated || this.won || this.hero.invulnerable || this.finisher || this.flight || this.rescuing) return;
+    if (this.hero.consumeWard()) {
+      // The Simorgh's ward turns the blow away.
+      services.audio.play('barrierBreak');
+      services.haptics.play('medium');
+      this.fx.shake('hit');
+      return;
+    }
+    if (this.tutorial) {
+      // Learning is free: a lunge during the tutorial only staggers the hero.
+      this.hero.hurt();
+      this.fx.shake('hit');
+      services.audio.play('hurt');
+      return;
+    }
     const { audio, haptics } = services;
     this.hero.hurt();
     this.fx.shake('hurt');
@@ -908,8 +1036,116 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
   private rescueDone(): void {
     this.rescuing = false;
+    this.aim.enabled = this.canAim();
+  }
+
+  /** Whether the player may aim right now (no cutscene, finisher, rescue or power in the way). */
+  private canAim(): boolean {
     const st = this.boss.brain.state;
-    this.aim.enabled = !this.defeated && !this.won && !this.finisher && !this.flight && st !== 'intro' && st !== 'finisher';
+    return this.mode === 'play' && !this.defeated && !this.won && !this.finisher && !this.flight && !this.rescuing &&
+      st !== 'intro' && st !== 'finisher';
+  }
+
+  // ---------------------------------------------------------------- school powers
+
+  /** The power meter, for the HUD's orb. */
+  get powerValue(): number {
+    return this.meter.value;
+  }
+
+  /** The orb shows in play, once the tutorial is over. */
+  get powerAvailable(): boolean {
+    return this.mode === 'play' && !this.tutorial && !this.ended;
+  }
+
+  /** The orb was tapped. */
+  castPower(): boolean {
+    if (!this.powerAvailable || !this.canAim() || !this.meter.full) return false;
+    const school = services.settings.school;
+    if (!this.powers.canCast(school)) {
+      this.surprises.call('هدفی نیست…', this.hero.bowX, this.hero.bowY - 260, ['#ffffff', '#d8e0ff', '#8090c0'], 44);
+      return false;
+    }
+    this.meter.spend();
+    this.powersUsed++;
+    return this.powers.cast(school);
+  }
+
+  private gainPower(kind: 'golden' | 'kill' | 'trickShot', x: number, y: number): void {
+    if (!this.powerAvailable) return;
+    if (this.meter.add(kind) <= 0) return;
+    const p = this.toScreen(x, y);
+    this.hud.powerSpark(p.x, p.y);
+  }
+
+  /** A quake strike on an enemy: effects and the group feed (no combo: it isn't an arrow). */
+  private powerHitEnemy(e: Enemy, damage: number, outcome: string): void {
+    if (outcome === 'blocked' || outcome === 'pass') return;
+    this.damageDealt += damage;
+    this.numbers.spawn(e.hitX, e.hitY - e.hitR - 20, damage, false);
+    this.fx.hitSparks(e.hitX, e.hitY, false, e.color);
+    this.feedGroup(e.hitX, e.hitY, damage, false, outcome === 'kill');
+    if (outcome === 'kill') {
+      this.kills++;
+      this.fx.swirl(e.bodyX, e.bodyY, FEEL.particles.deathSmoke, 30);
+      this.fx.sparkles(e.bodyX, e.bodyY);
+      services.audio.play('kill');
+    }
+  }
+
+  // ---------------------------------------------------------------- surprises
+
+  private trackGoldenStreak(crit: boolean): void {
+    if (!crit) {
+      this.goldenStreak = 0;
+      return;
+    }
+    this.goldenStreak++;
+    const F = BALANCE.surprises.flameBow;
+    if (FEEL.surprises.flameBow.enabled && this.goldenStreak >= F.goldenStreak && !this.hero.flaming) {
+      this.goldenStreak = 0;
+      this.hero.flameBow(F.ms);
+      this.surprises.flameBow();
+    }
+  }
+
+  /** Rare: once a run at most, a golden imp dashes across during a wave. */
+  private maybeGoldenImp(force = false): void {
+    if (!FEEL.surprises.goldenImp.enabled || this.goldenImpDone || this.tutorial) return;
+    if (!force && Math.random() >= BALANCE.surprises.goldenImp.chancePerWave) return;
+    this.goldenImpDone = true;
+    this.time.delayedCall(force ? 200 : 2500 + Math.random() * 3000, () => {
+      if (this.defeated || this.won || this.mode !== 'play') return;
+      const left = Math.random() < 0.5;
+      const x = left ? ARENA.walls.left + 30 : ARENA.walls.right - 30;
+      this.waves.spawnOne('imp', x, FEEL.surprises.goldenImp.y, { golden: true });
+      this.surprises.call('دیو زرین!', DESIGN_W / 2, FEEL.surprises.goldenImp.y - 180, ['#fffbe0', '#ffd24a', '#c08010'], 64);
+      services.audio.play('golden');
+    });
+  }
+
+  private goldenImpCaught(e: Enemy): void {
+    const G = BALANCE.surprises.goldenImp;
+    const fx = this.fx;
+    for (let i = 0; i < 3; i++) fx.coinBurst(e.bodyX + (i - 1) * 40, e.bodyY, 14);
+    fx.sparkles(e.bodyX, e.bodyY);
+    fx.goldenBurst(e.bodyX, e.bodyY);
+    this.meter.fill();
+    this.feedGroup(e.bodyX, e.bodyY, G.groupBonus, true, true, FEEL.surprises.goldenImp.coins);
+    this.surprises.proclaim('دیو زرین به دام افتاد!');
+    services.audio.play('victory');
+    services.haptics.play('heavy');
+  }
+
+  private homaBlessing(): void {
+    this.homaBlessed = true;
+    this.meter.fill();
+    this.hero.revive(FEEL.surprises.homa.auraMs * 0.35);
+    this.surprises.proclaim('سایهٔ هما بر سرت افتاد!');
+    services.audio.play('heartFill');
+    services.haptics.play('heavy');
+    const p = this.toScreen(this.hero.x, this.hero.y - 150);
+    this.hud.powerSpark(p.x, p.y);
   }
 
   // ---------------------------------------------------------------- team moments
@@ -920,7 +1156,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
    * wait while aiming or with enemies close to the hero; otherwise now.
    */
   teamGate(): TeamGate {
-    if (this.mode !== 'play' || this.tutorial?.quiet) return 'blocked';
+    if (this.mode !== 'play' || this.tutorial?.quiet || this.powers.active || this.surprises.homaFlying) return 'blocked';
     if (this.defeated || this.won || this.finisher || this.flight || this.rescuing || this.volley.active) return 'blocked';
     const st = this.boss.brain.state;
     if (st === 'intro' || st === 'finisher') return 'blocked';
@@ -1004,6 +1240,12 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       members,
       isNewBest,
       epicLine: epicLineFor(stats),
+      school: services.settings.school,
+      homa: this.homaBlessed,
+      challenge: (() => {
+        const p = readStartParam(services.telegram.startParam);
+        return p?.kind === 'challenge' ? { name: p.name, score: p.score } : null;
+      })(),
     };
     this.scene.launch('Result', data);
   }
@@ -1030,7 +1272,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
           `BOSS ${b.state.toUpperCase()}  hp ${b.hp}/${b.maxHp} (${(b.hpPct * 100).toFixed(0)}%)` +
           `${b.stunLeft > 0 ? `  stun ${(b.stunLeft / 1000).toFixed(1)}s` : ''}${b.retryLeft > 0 ? `  retry ${(b.retryLeft / 1000).toFixed(1)}s` : ''}\n` +
           `particles: ${this.fx.aliveCount} alive / ${this.fx.budget} budget  effects: ${services.settings.reducedEffects ? 'light' : 'full'}\n` +
-          'H: hurt   B: boss now   N: boss -15%';
+          `power ${(this.meter.value * 100).toFixed(0)}% (${services.settings.school})  streak ${this.goldenStreak}\n` +
+          'H: hurt  B: boss now  N: boss -15%  P: power full  G: golden imp  J: Homa  K: flame bow';
       },
     });
     this.debug.onToggle = (on) => setPlaceholderLabels(this, Art.missing, on);
@@ -1043,6 +1286,23 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.waves.stop();
       for (const e of this.waves.enemies) e.vanish();
       this.startBossIntro();
+    });
+    kb?.on('keydown-P', () => {
+      if (this.debug.enabled) this.meter.fill();
+    });
+    kb?.on('keydown-G', () => {
+      if (!this.debug.enabled) return;
+      this.goldenImpDone = false;
+      this.maybeGoldenImp(true);
+    });
+    kb?.on('keydown-J', () => {
+      if (this.debug.enabled) this.surprises.flyHoma();
+    });
+    kb?.on('keydown-K', () => {
+      if (this.debug.enabled) {
+        this.hero.flameBow(BALANCE.surprises.flameBow.ms);
+        this.surprises.flameBow();
+      }
     });
     kb?.on('keydown-N', () => {
       if (!this.debug.enabled || !this.boss.brain.fighting) return;
