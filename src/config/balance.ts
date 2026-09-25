@@ -113,6 +113,28 @@ export const BALANCE = {
     clearRadius: 560,
   },
 
+  /** The run's score (Result screen, Hero Card, best score). */
+  score: {
+    /** Points per point of damage the player dealt (enemies + the Div). */
+    damage: 1,
+    kill: 40,
+    bestCombo: 60,
+    golden: 80,
+    victory: 3000,
+    /** Per heart still full at victory. */
+    heartLeft: 500,
+  },
+
+  /**
+   * Stars: 1 for a victory (or for a defeat that reached the Div), +1 for a sharp eye (golden
+   * accuracy or a long combo), +1 for a clean fight (victory, no rescue, few hearts lost).
+   */
+  stars: {
+    goldenPct: 0.35,
+    bestCombo: 10,
+    maxHeartsLost: 1,
+  },
+
   waves: {
     /** Pause before the first wave, and between waves. */
     startDelayMs: 1500,

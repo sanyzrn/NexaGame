@@ -8,7 +8,7 @@ export type SfxName =
   | 'bang' | 'drum' | 'slam' | 'shockwave' | 'barrierUp' | 'barrierChip' | 'barrierBreak' | 'stun'
   | 'summon' | 'bossHit' | 'heartbeat' | 'arrowLaunch' | 'shatter' | 'victory' | 'screech' | 'featherChime'
   | 'toast' | 'teamHit' | 'chainUp' | 'chainDown' | 'comboBreak' | 'heartFill' | 'rescue' | 'horn' | 'volley'
-  | 'pause';
+  | 'pause' | 'tick' | 'stamp' | 'whoosh' | 'bubble' | 'newBest' | 'dusk' | 'battle';
 
 /**
  * Procedural SFX with Web Audio — no audio files to download.
@@ -449,6 +449,39 @@ export class Audio {
         break;
       case 'pause':
         this.tone(t, 'sine', 523, 392, 0.12, 0.12);
+        break;
+      case 'tick':
+        // Counting up: a tiny wooden click, pitch rising with `intensity` (0..1).
+        this.tone(t, 'square', 1200 + 600 * intensity, 900 + 400 * intensity, 0.03, 0.03);
+        break;
+      case 'stamp':
+        // A seal pressed into wax: thump, then a bright glint.
+        this.tone(t, 'sine', 140, 60, 0.22, 0.6);
+        this.noiseBurst(t, 0.08, 'lowpass', 1600, 400, 0.4, 0.7);
+        this.tone(t + 0.06, 'sine', 1760 * (0.9 + 0.1 * intensity), 1760, 0.4, 0.08);
+        this.tone(t + 0.1, 'sine', 2637, 2637, 0.35, 0.05);
+        break;
+      case 'whoosh':
+        this.noiseBurst(t, 0.6, 'bandpass', 300, 2400, 0.35, 1.2);
+        break;
+      case 'bubble':
+        // A chat message popping in.
+        this.tone(t, 'sine', 880, 1320, 0.08, 0.1);
+        this.tone(t + 0.06, 'sine', 1320, 1320, 0.1, 0.06);
+        break;
+      case 'newBest':
+        [[784, 0], [988, 0.1], [1175, 0.2], [1568, 0.32]].forEach(([f, d]) => this.tone(t + d, 'triangle', f, f, 0.35, 0.1));
+        break;
+      case 'dusk':
+        // Defeat, with dignity: a low, warm minor chord that fades.
+        for (const f of [110, 131, 165, 220]) this.tone(t, 'triangle', f, f * 0.99, 2.2, 0.06);
+        this.noiseBurst(t, 1.6, 'lowpass', 500, 200, 0.05, 0.5);
+        break;
+      case 'battle':
+        // «نبرد!»: a drum hit under a rising horn call.
+        this.tone(t, 'sine', 95, 38, 0.55, 0.9);
+        this.noiseBurst(t, 0.09, 'lowpass', 900, 200, 0.35, 0.7);
+        for (const [d, f] of [[0.05, 196], [0.3, 262], [0.55, 392]]) this.tone(t + d, 'sawtooth', f, f, 0.35, 0.07);
         break;
     }
   }

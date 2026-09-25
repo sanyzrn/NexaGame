@@ -2,8 +2,8 @@
 
 A playable vertical slice of a Telegram Mini App archery game: Phaser 3, TypeScript and Vite.
 
-**Status: M4. Three waves, then the White Div's boss fight and the team finisher (M3), now fought alongside a simulated group: the group Div bar, teammate toasts, the chain, the rescue and the teammates' volley.**
-Next: M5 (screens, Hero Card, share) and M6 (performance pass and deploy).
+**Status: M5. The full loop: a title screen over the arena at dusk, a hands-on first-play tutorial, three waves, the White Div and the team finisher, fought alongside a simulated group, then the Result screen, the Hero Card and sharing.**
+Next: M6 (performance pass and deploy).
 
 ## Run
 
@@ -41,6 +41,14 @@ Enemies appear at the top edge in a puff of purple smoke and walk down. If one r
 Each arrow that hits keeps the **combo** going (the ×N badge on the left); an arrow that hits nothing, or losing a heart, ends it. After wave 5 the waves repeat with tougher enemies until the boss phase lands in M3.
 
 The pause menu has **Effects: full / light**. Light halves every particle count and turns the light shafts off, for weak phones. The choice is saved on the device.
+
+## Screens
+
+- **Title:** the real arena, held at dusk: the camera up high and drifting slowly against two ember layers (parallax), braziers and banners alive, the White Div a silhouette behind the wall with glowing eyes. The title «درفش» and subtitle «نبرد پهلوانان» (Nastaliq once it has loaded) are live text with a gold shine sweeping across. Tap the big pulsing «نبرد!» button and the camera pushes toward the wall, then sweeps down into the arena as the dusk lifts and the HUD fades in. There is no scene cut. Corner buttons: sound, and the group chip (tap it for a roll call). Your best score shows under the button.
+- **Tutorial (first play only):** hands-on, and the waves wait for you. (1) A ghost finger shows drag → hold → release while «بکش · نگه دار · رها کن!» light up in step, and the step ends with your first real shot. (2) Hold for the golden window: «حالا!» bursts over the bow when it opens, and the step ends on a golden release (or moves on kindly after three tries). (3) One shield-bearer appears, and a marching gold path shows a ricochet that reaches it from the side. The path is found by tracing the real arena, pillars included, and the shield-bearer appears at the highest spot where such a path exists. «رد کردن» skips it. Completion is stored in localStorage (guarded).
+- **Result:** after a victory, light floods in with slow god-rays; after a defeat, a quiet dusk with words that point forward («پایان نبرد»). The panel slides up, then the stats count up one by one with ticks (score, best combo, golden hits, golden-window accuracy, damage to the group Div). 1–3 stars stamp down with sparkles (rules in `BALANCE.stars`), and a «رکورد تازه!» stamp marks a new best. The group Div bar drains by your share, and «سهم تو از پیروزی لشکر: X٪» counts up. Tap anywhere to hurry. Buttons: «دوباره», «کارت افتخار», «دعوت هم‌رزم» (Telegram share sheet with text + link; the clipboard in other browsers).
+- **Hero Card:** 1080×1920 on `card_bg`, drawn with Canvas 2D with all text live: your name (Telegram first name or «پهلوان»), an epic line chosen by performance (`src/data/lines.ts`), the hero in a gold halo beside the group's banner, the stars, three stat medallions, the group row, and a red «بی‌نقص» seal for a flawless run. It flips in with a gold flash and a light sweep, then a real `<img>` is laid over it, so inside Telegram it can be long-pressed and saved. «اشتراک کارت» goes through `GameService.prepareShare()`: today the Telegram share sheet with text + link; with a backend, a prepared message that carries the image (`WebApp.shareMessage`). Outside Telegram it uses the native share sheet (with the image when supported) and «دانلود تصویر» saves the PNG.
+- **Surprise: teammates reply (`FEEL.reactions.enabled`).** After the stars land, two teammates answer in Telegram-style chat bubbles: typing dots first, then a line that fits your run (a long combo, golden accuracy, being rescued, a defeat…). A flawless run gets the whole group's crown cheer, sent from the group banner, with confetti. Tap a bubble to send a heart back.
 
 ## Team feel (simulated group)
 
@@ -107,6 +115,7 @@ All gameplay numbers live in `src/config/balance.ts`. Times are in ms and distan
 | `waves` | `startDelayMs`, `betweenMs`, `sideMargin`, `loopHpScale` |
 | `chain` | `multipliers` (×1, ×1.2, ×1.5, ×2), `durationMs` per tier, `hitExtendMs` / `critExtendMs`, `dropRefill` |
 | `rescue` | `hearts` restored (1), `shieldMs` (invulnerable shimmer), `clearRadius` |
+| `score`, `stars` | score weights (damage, kill, best combo, golden hit, victory, hearts left); star thresholds (golden accuracy, best combo, hearts lost) |
 
 The mock group lives in `src/config/team.ts`: `SCHOOLS` (names, colours), `MOCK_GROUP` (members, who is already in the fight, the group Div's hp) and `MOCK_PACING` (how often teammates act, damage per school, crit odds, the odds of each activity).
 
@@ -131,6 +140,8 @@ Every animation, lighting and particle number lives in `src/config/feel.ts`. All
 | `toast` | toast slots, slide in/out, hold, busy patience, gap, spark flight |
 | `chain`, `combo`, `hearts` | chain flame size/colour/glow/embers per tier, warning blink; combo tiers, flames, text colours, shatter; heart layout and refill |
 | `rescue`, `volley` | rescue slow-mo, dim, spirit timing; the volley's trigger (danger zone, cooldown, max per run), arrows, arc, damage (`volley.enabled` is the surprise's flag) |
+| `title`, `tutorial` | title camera zoom/focus/drift, dusk colours, embers, the flight in (push, sweep), button pulse, shine; ghost-finger loop and idle wait, golden-step tries |
+| `result`, `reactions` | flood, panel slide, count-up speed and tick rate, star gap, group drain; the teammates' replies (`reactions.enabled` is M5's surprise flag), typing time, confetti |
 
 ## Performance and particle budget
 
@@ -151,10 +162,10 @@ It shows FPS, renderer, charge percentage and phase, the last shot's damage, wav
 src/
   main.ts                 Telegram init, font + WebP detection, Phaser config (1080x1920, FIT)
   config/                 balance.ts (gameplay numbers), feel.ts (look and motion), display.ts (design size, colours, depths)
-  data/                   arena.ts (layout), entities.ts (per-pose anchors, scales, hitboxes, shadows), waves.ts
+  data/                   arena.ts (layout), entities.ts (per-pose anchors, scales, hitboxes, shadows), waves.ts, lines.ts (epic lines, reactions)
   assets/                 manifest.ts, Art.ts (key → atlas frame / image / placeholder, anchors, fallbacks), placeholders.ts, fxTextures.ts
   render/                 Atmosphere (bg shader, grade, shafts, motes), BendSprite (bendable pose strip), Shadow
-  scenes/                 Boot → Preload → Game (+ Hud on top, + Pause over both)      [Title, Result: M5]
+  scenes/                 Boot → Preload → Game (title mode at dusk) + Title → Game (play) + Hud → Result (+ Card); Pause over all
   systems/
     AimSystem.ts          point-and-release input, smoothing, charge, cancel     (real time)
     charge.ts             pure charge curve + shot stats (unit tested)
@@ -165,14 +176,17 @@ src/
     FX.ts / TimeCtl.ts    particles, shake, hit-stop / slow-mo
     Audio.ts              procedural Web Audio SFX + mute + hold (pause)
     Volley.ts             the teammates' volley (surprise)
+    Tutorial.ts           the hands-on first-play tutorial (ghost finger, golden step, ricochet hint)
+    score.ts              score, stars, epic line and reaction picks (pure, unit tested)
   entities/               Hero, Boss (idle White Div), Decor (pillars, braziers, banners, pots), Enemy (pooled, all three types)
-  services/               TelegramBridge, Haptics, Settings, SafeArea, GameService + MockGameService + MockGroupSession, chain.ts (pure, unit tested)
-  ui/                     kit (code-drawn panels, buttons, ribbons, toggles, banners, ornaments), Button + Toggle, DamageNumbers, TutorialBanner,
-                          GroupBar, GoldStream, TeamToasts, SparkFlight, ChainBadge, ComboBadge, Hearts, RescueSpirit, avatar
+  services/               TelegramBridge, Haptics, Settings, SafeArea, Share, GameService + MockGameService + MockGroupSession, chain.ts (pure, unit tested)
+  ui/                     kit (code-drawn panels, buttons, ribbons, toggles, banners, ornaments), Button + Toggle, DamageNumbers,
+                          GroupBar, GoldStream, TeamToasts, SparkFlight, ChainBadge, ComboBadge, Hearts, RescueSpirit, avatar,
+                          GhostFinger, HeroCard (Canvas 2D renderer)
   debug/                  DebugOverlay
 ```
 
-Systems talk through typed `Signal`s, and `GameScene` only wires them together. `GameService` is the backend seam: the demo uses `MockGameService`, and a Cloudflare Workers implementation can drop in later. That includes `prepareShare()` for real image sharing via `WebApp.shareMessage`.
+Systems talk through typed `Signal`s, and `GameScene` only wires them together. `GameService` is the backend seam: the demo uses `MockGameService`, and a Cloudflare Workers implementation can drop in later. That includes `prepareShare()` for real image sharing via `WebApp.shareMessage`, and `prepareInvite()` for the «دعوت هم‌رزم» link (a backend can turn it into a referral).
 
 `GameService.joinGroup()` opens a `GroupSession` for the run. It is pull-based: the HUD takes an activity with `next()` only when it has a calm moment to show it, and the activity's effect on the shared state (hp, chain, members) is committed at that moment, so what the player sees never runs ahead of or behind the state. A network implementation buffers incoming events behind `next()` the same way. Member avatars are generated (school-coloured disc and initial). Give a member a `photoUrl` and the same texture is repainted with their Telegram photo.
 

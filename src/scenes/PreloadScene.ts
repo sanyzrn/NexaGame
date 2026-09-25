@@ -63,7 +63,8 @@ export class PreloadScene extends Phaser.Scene {
     }
 
     createFxTextures(this);
-    this.scene.start('Game');
+    // The title is the arena itself at dusk, with the Title overlay on top.
+    this.scene.start('Game', { title: true });
   }
 
   private drawProgress(): void {

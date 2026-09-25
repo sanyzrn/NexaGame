@@ -26,11 +26,15 @@ import { TimeCtl } from '../systems/TimeCtl';
 import { Volley } from '../systems/Volley';
 import { WaveSystem, type WaveInfo } from '../systems/WaveSystem';
 import { DamageNumbers } from '../ui/DamageNumbers';
-import { TutorialBanner } from '../ui/TutorialBanner';
+import { Tutorial } from '../systems/Tutorial';
+import { finalize, epicLineFor, type RunStats } from '../systems/score';
+import { avatarColor, avatarTex } from '../ui/avatar';
+import { vGradientTex } from '../ui/kit';
 import { easeInCubic, easeInOutSine } from '../utils/ease';
 import { faDigits } from '../utils/fa';
 import type { TeamGate } from '../ui/TeamToasts';
 import type { HudScene } from './HudScene';
+import type { ResultData } from './ResultScene';
 
 /** The raised top line during the boss fight: arrows fly past the wall to him (and fade in the sky). */
 const FIGHT_TOP = 40;
@@ -72,7 +76,22 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private numbers!: DamageNumbers;
   private debug!: DebugOverlay;
   private hud!: HudScene;
-  private tutorial: TutorialBanner | null = null;
+  private tutorial: Tutorial | null = null;
+  /** 'title': held at dusk behind the title screen; 'flying': the camera dives in; 'play'. */
+  private mode: 'title' | 'flying' | 'play' = 'play';
+  private dusk: Phaser.GameObjects.Image | null = null;
+  private embers: Phaser.GameObjects.Particles.ParticleEmitter[] = [];
+  /** The Div's eyes, glowing through the title's dusk. */
+  private titleEyes: Phaser.GameObjects.Image[] = [];
+  private titleT = 0;
+  private readonly camK = { k: 0 };
+  // Run stats for the Result screen.
+  private shots = 0;
+  private goldenShots = 0;
+  private damageDealt = 0;
+  private heartsLost = 0;
+  private reachedBoss = false;
+  private ended = false;
   private finisher: TeamFinisher | null = null;
   private flight: Flight | null = null;
   private volley!: Volley;
@@ -99,8 +118,16 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     super('Game');
   }
 
-  create(): void {
+  create(data?: { title?: boolean }): void {
     const { audio, haptics } = services;
+    this.mode = data?.title ? 'title' : 'play';
+    this.tutorial = null;
+    this.dusk = null;
+    this.embers = [];
+    this.titleEyes = [];
+    this.titleT = 0;
+    this.shots = this.goldenShots = this.damageDealt = this.heartsLost = 0;
+    this.reachedBoss = this.ended = false;
     this.hearts = BALANCE.hero.hearts;
     this.combo = this.bestCombo = this.kills = this.bossDamage = 0;
     this.defeated = this.won = this.simorghDone = false;
@@ -127,9 +154,6 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.world.aimX = launch.x;
     this.world.aimY = launch.y;
 
-    this.tutorial = services.settings.tutorialDone
-      ? null
-      : new TutorialBanner(this, ARENA.platform.x, ARENA.platform.y - 272, DEPTH.floorFx + 5);
     this.waves = new WaveSystem(this, this);
     this.numbers = new DamageNumbers(this);
     this.projectiles = new ProjectileSystem(this, this.collider, () => this.allTargets(), fx);
@@ -150,7 +174,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       onMiss: (x, y) => fx.absorb(x, y),
     });
 
-    this.scene.launch('Hud');
+    this.scene.launch('Hud', { hidden: this.mode === 'title' });
     const hud = (this.hud = this.scene.get('Hud') as HudScene);
     this.aim = new AimSystem(this, launch, (p) => hud.isPointerOverUi(p));
     this.aimView = new AimView(this, this.aim, this.collider, launch, () => this.allTargets());
@@ -190,6 +214,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       audio.stopHum();
       audio.play('release', e.charge);
       haptics.play('light');
+      this.shots++;
+      if (e.shot.crit || this.hero.feathered) this.goldenShots++;
       if (this.hero.feathered) {
         // The Simorgh's feather: a guided golden arrow, straight for the gem.
         const shot = shotFor({ charge: 1, phase: 'golden' });
@@ -217,7 +243,6 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.waves.onWaveStart.add((w) => this.announceWave(w));
     this.waves.onAllCleared.add(() => this.time.delayedCall(1200, () => this.startBossIntro()));
     this.wireBoss();
-    this.waves.start();
 
     this.events.on(Phaser.Scenes.Events.PAUSE, () => {
       this.aim.cancel();
@@ -226,14 +251,143 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     });
 
     this.buildDebug(this.collider.pillars, launch);
+    if (this.mode === 'title') this.enterTitle();
+    else {
+      this.cameras.main.fadeIn(450, 10, 6, 20);
+      this.startRun();
+    }
+  }
+
+  // ---------------------------------------------------------------- title & the flight in
+
+  /** Behind the title screen: dusk, embers, the camera up high, the Div a glowing-eyed silhouette. */
+  private enterTitle(): void {
+    const F = FEEL.title;
+    const D = F.dusk;
+    this.aim.enabled = false;
+    this.dusk = this.add.image(-40, -40, vGradientTex(this, 'ui_grad_title_dusk', D.top, D.mid, D.bottom))
+      .setOrigin(0).setDisplaySize(DESIGN_W + 80, DESIGN_H + 80).setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY).setDepth(DEPTH.grade + 2.5).setAlpha(D.alpha);
+    this.atmosphere.darken(D.darken, 10);
+    this.boss.silhouette = 1;
+    this.titleEyes = this.boss.eyeGlows.map(() => this.add.image(0, 0, 'fx_glow').setTint(0xff4a1a)
+      .setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.grade + 3).setScale(0.9));
+    // Two ember layers at different depths (scroll factors), for parallax against the drift.
+    const ember = (scale: number, scroll: number, alpha: number, depth: number, rate: number) => {
+      const e = this.add.particles(0, 0, 'fx_spark', {
+        x: { min: 40, max: DESIGN_W - 40 }, y: { min: DESIGN_H * 0.6, max: DESIGN_H + 40 },
+        lifespan: { min: F.embers.lifeMs[0], max: F.embers.lifeMs[1] },
+        speedY: { min: -120, max: -50 }, speedX: { min: -25, max: 35 },
+        scale: { start: scale, end: 0 }, alpha: { start: alpha, end: 0 },
+        tint: [0xff8a2a, 0xffc04a, 0xff5a1a], blendMode: 'ADD',
+        frequency: 1000 / services.settings.count(rate), maxParticles: 60,
+      }).setScrollFactor(scroll).setDepth(depth);
+      e.fastForward(3000);
+      this.embers.push(e);
+    };
+    ember(0.9, 1.25, 1, DEPTH.motes + 1, F.embers.perSec);
+    ember(0.5, 0.8, 0.7, DEPTH.grade - 1, F.embers.perSec * 0.7);
+    this.placeTitleCamera(0);
+    this.scene.launch('Title');
+  }
+
+  private placeTitleCamera(drift: number): void {
+    const cam = this.cameras.main;
+    cam.setZoom(FEEL.title.camZoom);
+    cam.centerOn(DESIGN_W / 2 + drift, FEEL.title.focusY);
+  }
+
+  /** «نبرد!»: a short push toward the wall, then the camera sweeps down into the arena. */
+  beginPlay(): void {
+    if (this.mode !== 'title') return;
+    this.mode = 'flying';
+    const F = FEEL.title;
+    const cam = this.cameras.main;
+    const x0 = cam.midPoint.x;
+    const y0 = cam.midPoint.y;
+    const z0 = cam.zoom;
+    services.audio.play('whoosh');
+    this.camK.k = 0;
+    this.tweens.add({
+      targets: this.camK, k: 1, duration: F.pushMs, ease: 'Sine.easeIn',
+      onUpdate: () => {
+        const k = this.camK.k;
+        cam.setZoom(z0 + (F.pushZoom - z0) * k);
+        cam.centerOn(x0 + (DESIGN_W / 2 - x0) * k, y0 - 50 * k);
+      },
+      onComplete: () => {
+        const z1 = cam.zoom;
+        const y1 = cam.midPoint.y;
+        this.camK.k = 0;
+        this.tweens.add({
+          targets: this.camK, k: 1, duration: F.flyMs, ease: 'Cubic.easeInOut',
+          onUpdate: () => {
+            const k = this.camK.k;
+            cam.setZoom(z1 + (1 - z1) * k);
+            cam.centerOn(DESIGN_W / 2, y1 + (DESIGN_H / 2 - y1) * k);
+          },
+          onComplete: () => {
+            cam.setZoom(1).centerOn(DESIGN_W / 2, DESIGN_H / 2);
+            this.mode = 'play';
+            this.startRun();
+          },
+        });
+      },
+    });
+    // The dusk lifts and the Div steps out of shadow as we arrive; the HUD fades in at the end.
+    if (this.dusk) this.tweens.add({ targets: this.dusk, alpha: 0, duration: F.pushMs + F.flyMs, ease: 'Sine.easeInOut' });
+    this.atmosphere.darken(0, F.pushMs + F.flyMs);
+    this.tweens.add({
+      targets: this.boss, silhouette: 0, duration: F.flyMs, delay: F.pushMs,
+      onComplete: () => {
+        for (const e of this.titleEyes) e.destroy();
+        this.titleEyes = [];
+      },
+    });
+    for (const e of this.embers) e.stop();
+    this.time.delayedCall(F.pushMs + F.flyMs * 0.55, () => this.hud.reveal(F.flyMs * 0.45));
+  }
+
+  /** The run proper: the tutorial first (first play), then the waves. */
+  private startRun(): void {
+    this.aim.enabled = true;
+    if (services.settings.tutorialDone) {
+      this.waves.start();
+      return;
+    }
+    this.tutorial = new Tutorial(this, {
+      bow: { x: this.hero.bowX, y: this.hero.bowY },
+      aim: this.aim,
+      collider: this.collider,
+      spawnShield: (x, y) => this.waves.spawnOne('shield', x, y),
+      showSkip: (cb) => this.hud.showSkip(cb),
+      hideSkip: () => this.hud.hideSkip(),
+      onDone: () => {
+        this.tutorial = null;
+        this.waves.start();
+      },
+    });
   }
 
   update(_time: number, delta: number): void {
     const realMs = Math.min(delta, 50);
     const dt = this.timeCtl.update(realMs);
 
+    if (this.mode === 'title') {
+      // A slow drift of the camera over the dusk arena.
+      this.titleT += realMs;
+      this.placeTitleCamera(Math.sin((this.titleT / FEEL.title.driftMs) * Math.PI * 2) * FEEL.title.driftPx);
+    }
+    if (this.titleEyes.length) {
+      const glow = 0.55 + 0.35 * Math.sin(this.titleT / 700);
+      this.titleEyes.forEach((e, i) => {
+        const src = this.boss.eyeGlows[i];
+        e.setPosition(src.x, src.y).setAlpha(glow * this.boss.silhouette);
+      });
+    }
     const aim = this.aim;
     aim.update(realMs);
+    this.tutorial?.update(realMs);
     const golden = aim.charging && aim.state.phase === 'golden';
     if (this.wasGolden && !golden) services.audio.stopHum();
     this.wasGolden = golden;
@@ -272,6 +426,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
   private startBossIntro(): void {
     if (this.defeated) return;
+    this.reachedBoss = true;
     const I = FEEL.boss.intro;
     const cam = this.cameras.main;
     const { audio } = services;
@@ -403,9 +558,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
         return;
       }
       this.bossDamage += e.damage;
+      this.damageDealt += e.damage;
       this.hud.setBossHp(boss.brain.hpPct);
       this.feedGroup(e.x, e.y, e.damage, e.crit, false);
-      this.onFirstHit();
       this.setCombo(this.combo + 1);
       const gem = boss.gemHit;
       const big = gem && e.crit;
@@ -441,9 +596,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if (e.outcome === 'pass') return;
 
     this.numbers.spawn(t.hitX, t.hitY - t.hitR - 20, e.damage, e.crit);
+    this.damageDealt += e.damage;
     fx.hitSparks(e.x, e.y, e.crit, t.color);
     this.feedGroup(e.x, e.y, e.damage, e.crit, e.outcome === 'kill');
-    this.onFirstHit();
     this.setCombo(this.combo + 1);
     if (e.crit) {
       fx.hitStop();
@@ -476,14 +631,6 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private toScreen(x: number, y: number): Point {
     const cam = this.cameras.main;
     return { x: (x - cam.worldView.x) * cam.zoom, y: (y - cam.worldView.y) * cam.zoom };
-  }
-
-  private onFirstHit(): void {
-    if (!this.tutorial) return;
-    // The first arrow that hits ends the tutorial, for good.
-    this.tutorial.dismiss();
-    this.tutorial = null;
-    services.settings.markTutorialDone();
   }
 
   private onArrowEnd(e: ArrowEndEvent): void {
@@ -604,6 +751,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.boss.finisherResult(false);
       const wound = hpBefore - this.boss.brain.hp;
       this.bossDamage += wound;
+      this.damageDealt += wound;
       this.feedGroup(gem.x, gem.y, wound, true, false, FEEL.stream.critMotes * 2);
       this.hud.setBossHp(this.boss.brain.hpPct);
       this.timeCtl.slowMo(1, 0);
@@ -621,6 +769,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.boss.finisherResult(true);
     // The whole group's arrow: its blow pours into the group bar as a river of gold.
     this.bossDamage += hpBefore;
+    this.damageDealt += hpBefore;
     this.feedGroup(gem.x, gem.y, hpBefore, true, true, 24);
     this.hud.setBossHp(0);
     this.timeCtl.hitStop(F.freezeMs);
@@ -654,7 +803,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       audio.play('victory');
     });
     this.time.delayedCall(F.freezeMs + F.panelAtMs, () => {
-      this.hud.showVictory({ kills: this.kills, bestCombo: this.bestCombo, damage: this.bossDamage });
+      void this.finishRun(true);
     });
   }
 
@@ -711,6 +860,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     audio.play('hurt');
     haptics.play('heavy');
     this.hearts--;
+    this.heartsLost++;
     this.hud.setHearts(this.hearts);
     this.setCombo(0);
     if (this.hearts <= 0 && !this.startRescue()) this.lose();
@@ -770,6 +920,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
    * wait while aiming or with enemies close to the hero; otherwise now.
    */
   teamGate(): TeamGate {
+    if (this.mode !== 'play' || this.tutorial?.quiet) return 'blocked';
     if (this.defeated || this.won || this.finisher || this.flight || this.rescuing || this.volley.active) return 'blocked';
     const st = this.boss.brain.state;
     if (st === 'intro' || st === 'finisher') return 'blocked';
@@ -783,7 +934,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   /** Surprise: the teammates' volley answers a crowded arena (see FEEL.volley). */
   private maybeVolley(dt: number): void {
     const V = FEEL.volley;
-    if (!V.enabled || this.volleyCount >= V.maxPerRun || this.volley.active) return;
+    if (!V.enabled || this.volleyCount >= V.maxPerRun || this.volley.active || this.tutorial || this.mode !== 'play') return;
     if (this.volleyCooldown > 0) this.volleyCooldown -= dt;
     if (this.runMs < V.firstAfterMs || this.volleyCooldown > 0 || this.teamGate() === 'blocked') return;
     let near = 0;
@@ -808,8 +959,53 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     services.audio.stopHum();
     this.timeCtl.slowMo(0.3, 900);
     this.time.delayedCall(800, () => {
-      this.hud.showDefeat({ wave: this.waves.info.index + 1, kills: this.kills, bestCombo: this.bestCombo });
+      void this.finishRun(false);
     });
+  }
+
+  // ---------------------------------------------------------------- the end of the run
+
+  /** Gathers the run, reports it, and hands the screen to the Result scene. */
+  private async finishRun(won: boolean): Promise<void> {
+    if (this.ended) return;
+    this.ended = true;
+    this.hud.endRun();
+    const group = this.hud.group;
+    const stats: RunStats = finalize({
+      won,
+      kills: this.kills,
+      shots: this.shots,
+      goldenShots: this.goldenShots,
+      bestCombo: this.bestCombo,
+      damageDealt: this.damageDealt,
+      groupDamage: this.hud.groupDamage,
+      heartsLost: this.heartsLost,
+      heartsLeft: Math.max(0, this.hearts),
+      rescued: this.rescueUsed,
+      reachedBoss: this.reachedBoss,
+    });
+    let isNewBest = false;
+    try {
+      const res = await services.game.submitRun({
+        score: stats.score, bestCombo: stats.bestCombo, crits: stats.goldenShots, shots: stats.shots, kills: stats.kills,
+        damage: stats.groupDamage, stars: stats.stars, durationMs: Math.round(this.runMs), won,
+      });
+      isNewBest = res.isNewBest;
+    } catch (err) {
+      console.warn('[run] submit failed', err);
+    }
+    const members = (group?.members ?? []).map((m) => ({ name: m.name, color: avatarColor(m), avatar: avatarTex(this, m) }));
+    const data: ResultData = {
+      stats,
+      heroName: services.telegram.userFirstName ?? 'پهلوان',
+      groupName: group?.name ?? 'لشکر',
+      groupHp: group?.hp ?? 0,
+      groupHpMax: group?.hpMax ?? 1,
+      members,
+      isNewBest,
+      epicLine: epicLineFor(stats),
+    };
+    this.scene.launch('Result', data);
   }
 
   // ---------------------------------------------------------------- debug

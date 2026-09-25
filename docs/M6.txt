@@ -1,0 +1,36 @@
+﻿M5.5 approved. Build M6, the final milestone of the demo: performance, stability, Telegram integration polish, and deployment. Commit as M6 when done.
+
+
+## 1. Performance
+- Profile the full run (title → waves → boss → Arash finisher → result). Report average and minimum FPS and the heaviest moments.
+- Keep 60 fps on a mid-range Android; auto-enable "reduced effects" if FPS stays under 45 for 3 seconds (with a tiny toast), and let the player turn it back on.
+- No per-frame allocations; verify pools; no memory leaks across repeated runs (test 10 restarts in a row).
+- Lazy-load anything not needed for the first run (card_bg, result assets, boss assets until wave 2).
+
+
+## 2. Size budget
+- Report the exact initial load size and total size, per file. Initial load must be under 4 MB, ideally under 3 MB.
+- Optimize: atlas packing, WebP quality per asset, font subsetting for Vazirmatn (only the needed characters), audio compression, tree-shaking.
+- Show a fast, branded loading screen with real progress.
+
+
+## 3. Telegram and mobile robustness
+- Handle viewport changes, safe areas, and theme; use Telegram BackButton (pause menu / back), enableClosingConfirmation during a run, disableVerticalSwipes so swipes don't close the app mid-aim.
+- Pause automatically on visibilitychange / app minimize; resume cleanly.
+- Unlock audio on the first touch (iOS); make sure haptics fail silently where unsupported.
+- Test in: Telegram Android, Telegram iOS, Telegram Desktop, Chrome mobile, Safari iOS. Document any differences.
+- Graceful error screen with a retry button if loading fails.
+
+
+## 4. Quality
+- Fix all console errors and warnings (except intentional missing-asset notices, which should be none now).
+- Write a QA checklist (QA.md) covering every feature, surprise flag and power, so I can test everything later in one session.
+
+
+## 5. Deployment
+- Production build deployable to Vercel or Cloudflare Pages; include the config file for both.
+- README: run, build, deploy, connect the existing bot via BotFather (Mini App URL), add/replace assets, tune balance.ts and feel.ts, and toggle surprise flags.
+
+
+## 6. Final summary
+Give me: final size and FPS numbers, known issues, a short list of what's ready to demo, and your top 5 recommendations for turning this demo into the real game (backend, real group bot, economy).

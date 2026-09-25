@@ -592,6 +592,193 @@ export function lachakTex(scene: Phaser.Scene, size: number): string {
   });
 }
 
+// ---------------------------------------------------------------- screens (M5)
+
+/** The tutorial's ghost finger: a soft white index finger pointing up, with a little of the hand. */
+export function ghostFingerTex(scene: Phaser.Scene): string {
+  return make(scene, 'ui_ghost_finger', 140, 220, (ctx) => {
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 6;
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    // index finger
+    rr(ctx, 52, 14, 38, 120, 19);
+    ctx.fill();
+    // folded fingers and palm
+    rr(ctx, 30, 108, 92, 96, 34);
+    ctx.fill();
+    // thumb
+    ctx.beginPath();
+    ctx.ellipse(34, 130, 16, 34, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(60,40,20,0.35)';
+    ctx.lineWidth = 3;
+    rr(ctx, 52, 14, 38, 120, 19);
+    ctx.stroke();
+    // knuckle creases and nail
+    ctx.beginPath();
+    ctx.moveTo(62, 112);
+    ctx.lineTo(80, 112);
+    ctx.moveTo(90, 132);
+    ctx.lineTo(112, 132);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,220,200,0.6)';
+    rr(ctx, 60, 20, 22, 26, 10);
+    ctx.fill();
+  });
+}
+
+/** Round speaker button face, on (sound waves) or off (a cross). */
+export function speakerTex(scene: Phaser.Scene, on: boolean): string {
+  return make(scene, `ui_speaker_${on ? 'on' : 'off'}`, 120, 120, (ctx) => {
+    const c = 60;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    const g = ctx.createLinearGradient(0, 10, 0, 110);
+    g.addColorStop(0, UI.lapisTop);
+    g.addColorStop(1, UI.lapisBottom);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(c, c, 50, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = goldStroke(ctx, 10, 110);
+    ctx.stroke();
+    ctx.fillStyle = UI.goldLight;
+    ctx.beginPath();
+    ctx.moveTo(36, 50);
+    ctx.lineTo(50, 50);
+    ctx.lineTo(66, 36);
+    ctx.lineTo(66, 84);
+    ctx.lineTo(50, 70);
+    ctx.lineTo(36, 70);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = UI.goldLight;
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    if (on) {
+      for (const r of [12, 22]) {
+        ctx.beginPath();
+        ctx.arc(68, 60, r, -0.8, 0.8);
+        ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = '#ff7a5c';
+      ctx.beginPath();
+      ctx.moveTo(76, 48);
+      ctx.lineTo(92, 72);
+      ctx.moveTo(92, 48);
+      ctx.lineTo(76, 72);
+      ctx.stroke();
+    }
+  });
+}
+
+/** Path of a five-point star centred at (cx, cy). */
+export function starPath(ctx: Ctx, cx: number, cy: number, r: number, inner = 0.46): void {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr2 = i % 2 ? r * inner : r;
+    const a = -Math.PI / 2 + (i / 10) * Math.PI * 2;
+    ctx.lineTo(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2);
+  }
+  ctx.closePath();
+}
+
+/** A result star: gold and bevelled (`full`), or an empty carved socket. */
+export function starTex(scene: Phaser.Scene, full: boolean): string {
+  return make(scene, `ui_star_${full ? 'full' : 'empty'}`, 180, 180, (ctx) => {
+    const c = 90;
+    if (full) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(80,40,0,0.6)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 6;
+      starPath(ctx, c, c + 4, 78);
+      ctx.fillStyle = goldStroke(ctx, 10, 170);
+      ctx.fill();
+      ctx.restore();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#8a5010';
+      ctx.stroke();
+      starPath(ctx, c, c + 6, 48);
+      const g = ctx.createLinearGradient(0, 40, 0, 140);
+      g.addColorStop(0, '#fffbe0');
+      g.addColorStop(1, '#f0b030');
+      ctx.fillStyle = g;
+      ctx.fill();
+      gem(ctx, c, c + 6, 10);
+    } else {
+      starPath(ctx, c, c + 4, 78);
+      ctx.fillStyle = 'rgba(7,11,28,0.7)';
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(243,198,90,0.45)';
+      ctx.stroke();
+    }
+  });
+}
+
+/** Vertical three-stop gradient (the title's dusk grade, the result's backdrops). */
+export function vGradientTex(scene: Phaser.Scene, key: string, top: string, mid: string, bottom: string): string {
+  return make(scene, key, 4, 256, (ctx) => {
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, top);
+    g.addColorStop(0.45, mid);
+    g.addColorStop(1, bottom);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 4, 256);
+  });
+}
+
+/** Soft god-rays fanning from the centre (victory light), for ADD blending and slow rotation. */
+export function raysTex(scene: Phaser.Scene): string {
+  return make(scene, 'ui_rays', 512, 512, (ctx) => {
+    const c = 256;
+    const n = 14;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const w = 0.09 + 0.05 * ((i * 7) % 3);
+      const g = ctx.createRadialGradient(c, c, 0, c, c, 256);
+      g.addColorStop(0, 'rgba(255,240,200,0.55)');
+      g.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(c, c);
+      ctx.arc(c, c, 256, a - w, a + w);
+      ctx.closePath();
+      ctx.fill();
+    }
+  });
+}
+
+/** A Telegram-like chat bubble (tail on the right, RTL), sized per call. */
+export function bubbleTex(scene: Phaser.Scene, w: number, h: number): string {
+  return make(scene, `ui_bubble_${w}x${h}`, w + 30, h + 16, (ctx) => {
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    ctx.fillStyle = '#fbf3df';
+    rr(ctx, 4, 4, w, h, 26);
+    ctx.fill();
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(w - 14, h - 22);
+    ctx.quadraticCurveTo(w + 6, h + 2, w + 22, h + 6);
+    ctx.quadraticCurveTo(w - 4, h + 4, w - 30, h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
 /** A gold eslimi divider: a line fading at both ends, twin curls and a gem at the centre. */
 export function dividerTex(scene: Phaser.Scene, w: number): string {
   return make(scene, `ui_divider_${w}`, w, 40, (ctx) => {

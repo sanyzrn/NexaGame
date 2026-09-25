@@ -26,12 +26,14 @@ export class MockGameService implements GameService {
   constructor(private readonly telegram: TelegramBridge) {}
 
   async getProfile(): Promise<PlayerProfile> {
-    return { id: this.telegram.userId ?? 'guest', name: this.telegram.userFirstName ?? 'پهلوان' };
+    const bestScore = Number(storage.get(BEST_KEY) ?? 0) || 0;
+    return { id: this.telegram.userId ?? 'guest', name: this.telegram.userFirstName ?? 'پهلوان', bestScore };
   }
 
   async getGroup(): Promise<GroupInfo> {
     const g = this.group;
-    return { id: MOCK_GROUP.id, name: g.name, bossName: g.bossName, bossHpMax: g.hpMax, bossHp: g.hp };
+    const members = (g.members.length ? g.members : MOCK_GROUP.members).map((m) => ({ ...m }));
+    return { id: MOCK_GROUP.id, name: g.name, bossName: g.bossName, bossHpMax: g.hpMax, bossHp: g.hp, members };
   }
 
   async joinGroup(): Promise<GroupSession> {
@@ -49,8 +51,17 @@ export class MockGameService implements GameService {
   }
 
   async prepareShare(request: ShareRequest): Promise<ShareTicket> {
-    const url = location.href.split('#')[0];
-    const text = `من در «درفش» ${faNum(request.damage)} آسیب به دیو سپید زدم! به ${request.groupName} بپیوند.`;
-    return { kind: 'link', url, text };
+    const text = `${request.heroName} در «درفش» ${faNum(request.damage)} آسیب به دیو سپید زد! ⚔️ به «${request.groupName}» بپیوند.`;
+    return { kind: 'link', url: this.appUrl(), text };
+  }
+
+  async prepareInvite(groupName: string): Promise<ShareTicket> {
+    const text = `هم‌رزم! «${groupName}» در «درفش» با دیو سپید می‌جنگد. بیا با هم شکستش بدهیم 🏹`;
+    return { kind: 'link', url: this.appUrl(), text };
+  }
+
+  /** The Mini App's own link (Telegram's share sheet needs an https URL; outside Telegram, this page). */
+  private appUrl(): string {
+    return location.href.split('#')[0].split('?')[0];
   }
 }

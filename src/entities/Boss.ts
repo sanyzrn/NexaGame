@@ -120,6 +120,12 @@ export class Boss {
   private crackAlpha = 1;
   private lastGem = false;
   private hidden = false;
+  /** The eye glows (the title lifts copies of them above its dusk grade). */
+  get eyeGlows(): readonly Phaser.GameObjects.Image[] {
+    return this.eyes;
+  }
+  /** Title screen: 1 = a dark silhouette behind the wall (eyes and gem still glow), 0 = normal. */
+  silhouette = 0;
   private strain = 0;
 
   constructor(private readonly scene: Phaser.Scene, time: TimeCtl) {
@@ -364,6 +370,7 @@ export class Boss {
       .setScale(this.place.s)
       .setRotation(I.tiltDeg * DEG * Math.sin((this.t / (I.bobMs * 1.9)) * TAU) + this.tilt.x + act.rot + (stunned ? wobble * 0.004 : 0));
     if (this.flashLeft > 0) b.setTint(0xffffff, true);
+    else if (this.silhouette > 0) b.setTint(mixTint(0xffffff, FEEL.title.silhouetteTint, this.silhouette));
     else b.setTint(brain.lowHp ? 0xffe2d8 : 0xffffff);
     b.update(dt);
 
@@ -915,4 +922,11 @@ export class Boss {
       g.strokePath();
     }
   }
+}
+
+/** Blends two 0xRRGGBB colours (k = 0 → a, 1 → b), rounded so tints don't change every frame. */
+function mixTint(a: number, b: number, k: number): number {
+  const q = Math.round(k * 32) / 32;
+  const ch = (shift: number) => Math.round(((a >> shift) & 0xff) * (1 - q) + ((b >> shift) & 0xff) * q);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }

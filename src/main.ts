@@ -4,8 +4,11 @@ import { COLORS, DESIGN_H, DESIGN_W } from './config/display';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { HudScene } from './scenes/HudScene';
+import { CardScene } from './scenes/CardScene';
 import { PauseScene } from './scenes/PauseScene';
 import { PreloadScene } from './scenes/PreloadScene';
+import { ResultScene } from './scenes/ResultScene';
+import { TitleScene } from './scenes/TitleScene';
 import { services } from './services';
 
 /** Lossy+alpha WebP probe (decoding, not encoding — Safari can decode but not encode WebP). */
@@ -46,7 +49,7 @@ async function start(): Promise<void> {
     render: { antialias: true, powerPreference: 'high-performance' },
     disableContextMenu: true,
     banner: false,
-    scene: [BootScene, PreloadScene, GameScene, HudScene, PauseScene],
+    scene: [BootScene, PreloadScene, GameScene, HudScene, TitleScene, ResultScene, CardScene, PauseScene],
   });
 
   services.telegram.on('viewportChanged', () => game.scale.refresh());

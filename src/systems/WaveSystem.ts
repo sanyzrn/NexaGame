@@ -102,6 +102,13 @@ export class WaveSystem {
     }
   }
 
+  /** One enemy at `x`: from the top edge, or bursting in at `y` (the tutorial's shield-bearer). */
+  spawnOne(type: Enemy['type'], x: number, y?: number): Enemy {
+    const e = this.freeEnemy();
+    e.spawn(type, x, 1, y);
+    return e;
+  }
+
   /** Enemies within `radius` of a point dissolve in gold (the rescue's shockwave), nearest first. */
   clearNear(fromX: number, fromY: number, radius: number, pxPerMs: number): void {
     for (const e of this.enemies) {

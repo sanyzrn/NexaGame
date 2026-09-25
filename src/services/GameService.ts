@@ -8,6 +8,7 @@ import type { School } from '../config/team';
 export interface PlayerProfile {
   id: string;
   name: string;
+  bestScore: number;
 }
 
 export interface GroupInfo {
@@ -16,13 +17,21 @@ export interface GroupInfo {
   bossName: string;
   bossHpMax: number;
   bossHp: number;
+  /** For the title's group chip and the Hero Card. */
+  members: GroupMember[];
 }
 
 export interface RunResult {
   score: number;
   bestCombo: number;
+  /** Golden (critical) releases. */
   crits: number;
+  /** Arrows fired; crits / shots = golden-window accuracy. */
+  shots: number;
+  kills: number;
+  /** Damage the player dealt to the group Div this run (chain applied). */
   damage: number;
+  stars: number;
   durationMs: number;
   won: boolean;
 }
@@ -111,4 +120,6 @@ export interface GameService {
   joinGroup(): Promise<GroupSession>;
   submitRun(result: RunResult): Promise<RunSubmitResponse>;
   prepareShare(request: ShareRequest): Promise<ShareTicket>;
+  /** «دعوت هم‌رزم»: a link that brings a friend into the player's group (a backend can make it a referral). */
+  prepareInvite(groupName: string): Promise<ShareTicket>;
 }

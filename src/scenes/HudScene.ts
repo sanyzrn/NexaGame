@@ -17,7 +17,7 @@ import { Hearts } from '../ui/Hearts';
 import { RescueSpirit } from '../ui/RescueSpirit';
 import { SparkFlight } from '../ui/SparkFlight';
 import { TeamToasts, type TeamGate } from '../ui/TeamToasts';
-import { UI, bannerTex, barFillTex, dimTex, gradientText, panelTex, ribbonTex, shineTex } from '../ui/kit';
+import { UI, bannerTex, barFillTex, gradientText, shineTex } from '../ui/kit';
 import { faMultiplier, faNum } from '../utils/fa';
 import type { GameScene } from './GameScene';
 
@@ -31,32 +31,13 @@ const TOAST_Y = 700;
 /** HUD depths (this scene only). */
 const Z = { stream: 12, top: 15, chain: 16, toast: 20, spark: 24, banner: 30, title: 70, rescue: 80, panel: 90 };
 
-export interface RunSummary {
-  wave: number;
-  kills: number;
-  bestCombo: number;
-}
-
-export interface VictorySummary {
-  kills: number;
-  bestCombo: number;
-  damage: number;
-}
-
-const TIPS = [
-  'سپردار را از روبه‌رو نمی‌شود زد؛ تیر را به دیوار یا ستون بزن تا از پهلو بخورد.',
-  'وقتی کمان طلایی می‌درخشد رها کن: ضربهٔ کاری از دو دیو می‌گذرد.',
-  'دیوی که به خط پایین برسد می‌پرد؛ آخرین فرصت همان لحظه است.',
-  'پرنده‌ها زیگزاگ می‌روند؛ کمی جلوترِ مسیرشان را نشانه بگیر.',
-  'هر ضربهٔ تو زنجیرهٔ لشکر را روشن نگه می‌دارد.',
-];
-
 /**
  * HUD layer on top of Game. Owns the live group session (the simulated teammates) and all of the
  * team feel: the group Div bar, the gold stream from the player's hits, teammate toasts and their
  * sparks, the chain flame, the rescue spirit. Also hearts, the combo badge, wave banners, the boss
- * bar, big titles and the end panels. The pause menu is its own scene (PauseScene), which pauses
- * this one too, so the teammates freeze with the world.
+ * bar, big titles and the tutorial's skip button. Hidden on the title screen and revealed as the
+ * camera flies in; hidden again when the Result screen takes over. The pause menu is its own scene
+ * (PauseScene), which pauses this one too, so the teammates freeze with the world.
  */
 export class HudScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -82,7 +63,11 @@ export class HudScene extends Phaser.Scene {
   private toastTitle!: Phaser.GameObjects.Text;
   private toastSub!: Phaser.GameObjects.Text;
   private toastShine!: Phaser.GameObjects.Image;
-  private defeat: Phaser.GameObjects.Container | null = null;
+  /** The run is over (the Result screen owns the screen). */
+  private ended = false;
+  private skip: Button | null = null;
+  /** Everything the player's hits sent to the group Div this run (chain applied). */
+  private playerGroupDamage = 0;
   private bar: Phaser.GameObjects.Container | null = null;
   private barFill!: Phaser.GameObjects.Image;
   private barTrail!: Phaser.GameObjects.Image;
@@ -100,9 +85,12 @@ export class HudScene extends Phaser.Scene {
     super('Hud');
   }
 
-  create(): void {
+  create(data?: { hidden?: boolean }): void {
     this.gameScene = this.scene.get('Game') as GameScene;
-    this.defeat = null;
+    this.ended = false;
+    this.skip = null;
+    this.playerGroupDamage = 0;
+    this.cameras.main.setAlpha(data?.hidden ? 0 : 1);
     this.bar = null;
     this.rescue = null;
     this.inFlight = this.chainShown = this.chainSparks = 0;
@@ -152,7 +140,7 @@ export class HudScene extends Phaser.Scene {
   /** Lets the Game scene ignore touches that land on HUD buttons. */
   isPointerOverUi(pointer: Phaser.Input.Pointer): boolean {
     if (!this.sys.isActive() || !this.pause) return false;
-    return this.defeat !== null || this.input.hitTestPointer(pointer).length > 0;
+    return this.ended || this.cameras.main.alpha < 0.5 || this.input.hitTestPointer(pointer).length > 0;
   }
 
   // ---------------------------------------------------------------- the group
@@ -204,6 +192,7 @@ export class HudScene extends Phaser.Scene {
     const S = FEEL.stream;
     const g = s.addPlayerDamage(amount, crit);
     this.inFlight += g;
+    this.playerGroupDamage += g;
     if (s.chain.tier > 0) this.chain.fed();
     this.stream.launch(x, y, motes || (crit ? S.critMotes : S.motes) + (kill ? S.killBonus : 0), g);
   }
@@ -237,6 +226,43 @@ export class HudScene extends Phaser.Scene {
         },
       });
     return true;
+  }
+
+  /** What the player's hits sent to the group Div this run. */
+  get groupDamage(): number {
+    return this.playerGroupDamage;
+  }
+
+  /** Fades the whole HUD in (the camera has flown into the arena). */
+  reveal(ms: number): void {
+    this.tweens.add({ targets: this.cameras.main, alpha: 1, duration: ms, ease: 'Sine.easeOut' });
+  }
+
+  /** The run is over: toasts leave, the HUD fades, the Result screen takes over. */
+  endRun(): void {
+    this.ended = true;
+    this.toasts.dismissAll();
+    this.hideSkip();
+    this.tweens.add({ targets: this.cameras.main, alpha: 0, duration: 500, delay: 200 });
+  }
+
+  /** The tutorial's «رد کردن» button, bottom left. */
+  showSkip(onSkip: () => void): void {
+    if (this.skip) return;
+    const b = new Button(this, 150, DESIGN_H - 90, 230, 84, 'رد کردن', () => {
+      this.hideSkip();
+      onSkip();
+    }, 'lapis').setDepth(Z.top).setAlpha(0);
+    this.tweens.add({ targets: b, alpha: 0.9, duration: 400, delay: 800 });
+    this.skip = b;
+  }
+
+  hideSkip(): void {
+    const b = this.skip;
+    if (!b) return;
+    this.skip = null;
+    b.disableInteractive();
+    this.tweens.add({ targets: b, alpha: 0, y: b.y + 40, duration: 260, onComplete: () => b.destroy() });
   }
 
   /** A big moment is starting: teammates' toasts step aside. */
@@ -348,57 +374,6 @@ export class HudScene extends Phaser.Scene {
     this.tweens.add({ targets: this.toastShine, x: 520, alpha: { from: 0.7, to: 0 }, duration: 700, delay: 260, ease: 'Sine.easeInOut' });
   }
 
-  // ---------------------------------------------------------------- defeat
-
-  showDefeat(run: RunSummary): void {
-    if (this.defeat) return;
-    this.toasts.dismissAll();
-    const cx = DESIGN_W / 2;
-    const cy = DESIGN_H / 2;
-    const dim = this.add.image(0, 0, dimTex(this)).setOrigin(0).setDisplaySize(DESIGN_W, DESIGN_H).setTint(0xffb0a0).setInteractive();
-    const W = 760;
-    const H = 820;
-    const parts: Phaser.GameObjects.GameObject[] = [this.add.image(0, 0, panelTex(this, W, H))];
-    parts.push(this.add.image(0, -H / 2 + 8, ribbonTex(this, 520, 130, 'red')));
-    parts.push(gradientText(this.add.text(0, -H / 2 - 4, 'شکست', {
-      fontFamily: FONT_FAMILY, fontSize: '72px', fontStyle: '900', rtl: true,
-    }).setOrigin(0.5), ['#fff4e0', '#ffd0a0', '#f0a060']));
-    parts.push(this.add.text(0, -H / 2 + 130, 'دیوها از سد تو گذشتند…', {
-      fontFamily: FONT_FAMILY, fontSize: '36px', color: '#c9d2f0', rtl: true,
-    }).setOrigin(0.5));
-
-    const stats: [string, number][] = [['موج', run.wave], ['دیو کشته', run.kills], ['بهترین پیاپی', run.bestCombo]];
-    this.statCards(parts, stats, -H / 2 + 300);
-
-    const tip = TIPS[Math.floor(Math.random() * TIPS.length)];
-    parts.push(this.add.text(0, 110, `نکته: ${tip}`, {
-      fontFamily: FONT_FAMILY, fontSize: '32px', color: '#f3dca0', rtl: true, align: 'center',
-      wordWrap: { width: W - 140, useAdvancedWrap: true },
-    }).setOrigin(0.5));
-    parts.push(new Button(this, 0, H / 2 - 130, 520, 132, 'دوباره', () => this.scene.start('Game'), 'gold'));
-
-    const panel = this.add.container(cx, cy, parts).setScale(0.8).setAlpha(0);
-    const c = this.add.container(0, 0, [dim, panel]).setDepth(Z.panel);
-    dim.setAlpha(0);
-    this.tweens.add({ targets: dim, alpha: 1, duration: 400 });
-    this.tweens.add({ targets: panel, alpha: 1, scale: 1, duration: 420, delay: 120, ease: 'Back.easeOut' });
-    this.defeat = c;
-  }
-
-  private statCards(parts: Phaser.GameObjects.GameObject[], stats: [string, number][], y: number): void {
-    stats.forEach(([label, value], i) => {
-      const x = (1 - i) * 226; // right to left
-      const card = this.add.graphics();
-      card.fillStyle(0x070b1c, 0.75).fillRoundedRect(x - 100, y - 95, 200, 190, 26);
-      card.lineStyle(3, 0xf3c65a, 0.7).strokeRoundedRect(x - 100, y - 95, 200, 190, 26);
-      parts.push(card);
-      parts.push(gradientText(this.add.text(x, y - 18, faNum(value), {
-        fontFamily: FONT_FAMILY, fontSize: value >= 10000 ? '52px' : '72px', fontStyle: '900',
-      }).setOrigin(0.5)));
-      parts.push(this.add.text(x, y + 56, label, { fontFamily: FONT_FAMILY, fontSize: '28px', color: UI.parchment, rtl: true }).setOrigin(0.5));
-    });
-  }
-
   // ---------------------------------------------------------------- boss bar
 
   /** The White Div's own health bar slides in with his name, under the group bar. */
@@ -478,7 +453,7 @@ export class HudScene extends Phaser.Scene {
     const s = this.session;
     if (s) {
       s.tick(ms);
-      const gate: TeamGate = this.rescue || this.defeat ? 'blocked' : this.gameScene.teamGate();
+      const gate: TeamGate = this.rescue || this.ended ? 'blocked' : this.gameScene.teamGate();
       if (this.toasts.ready(gate, ms, s.pending > 0)) {
         const a = s.next();
         if (a) this.present(a);
@@ -517,37 +492,6 @@ export class HudScene extends Phaser.Scene {
     });
   }
 
-  /** Placeholder victory panel (the Result screen arrives in M5). */
-  showVictory(run: VictorySummary): void {
-    if (this.defeat) return;
-    this.toasts.dismissAll();
-    const cx = DESIGN_W / 2;
-    const cy = DESIGN_H / 2;
-    const dim = this.add.image(0, 0, dimTex(this)).setOrigin(0).setDisplaySize(DESIGN_W, DESIGN_H).setTint(0xfff0c0).setInteractive();
-    const W = 760;
-    const H = 860;
-    const parts: Phaser.GameObjects.GameObject[] = [this.add.image(0, 0, panelTex(this, W, H))];
-    parts.push(this.add.image(0, -H / 2 + 8, ribbonTex(this, 560, 130, 'gold')));
-    parts.push(gradientText(this.add.text(0, -H / 2 - 4, 'پیروزی', {
-      fontFamily: FONT_FAMILY, fontSize: '72px', fontStyle: '900', rtl: true,
-    }).setOrigin(0.5), ['#5a2a04', '#3a1a02', '#2a1002']));
-    const team = this.groupName || 'لشکر';
-    parts.push(this.add.text(0, -H / 2 + 130, `دیو سپید به دست ${team} افتاد!`, {
-      fontFamily: FONT_FAMILY, fontSize: '34px', color: '#f3dca0', rtl: true,
-    }).setOrigin(0.5));
-    this.statCards(parts, [['آسیب به دیو', run.damage], ['دیو کشته', run.kills], ['بهترین پیاپی', run.bestCombo]], -H / 2 + 300);
-    parts.push(this.add.text(0, 110, 'صفحهٔ نتیجه و کارت پهلوان به‌زودی…', {
-      fontFamily: FONT_FAMILY, fontSize: '30px', color: '#b9c3e6', rtl: true,
-    }).setOrigin(0.5));
-    parts.push(new Button(this, 0, H / 2 - 130, 520, 132, 'نبرد دوباره', () => this.scene.start('Game'), 'gold'));
-    const panel = this.add.container(cx, cy, parts).setScale(0.8).setAlpha(0);
-    const c = this.add.container(0, 0, [dim, panel]).setDepth(Z.panel);
-    dim.setAlpha(0);
-    this.tweens.add({ targets: dim, alpha: 0.9, duration: 500 });
-    this.tweens.add({ targets: panel, alpha: 1, scale: 1, duration: 520, delay: 150, ease: 'Back.easeOut' });
-    this.defeat = c;
-  }
-
   // ---------------------------------------------------------------- building & layout
 
   private buildToast(): void {
@@ -579,7 +523,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private openMenu(): void {
-    if (this.defeat || this.scene.isActive('Pause') || !this.sys.isActive()) return;
+    if (this.ended || this.cameras.main.alpha < 0.5 || this.scene.isActive('Pause') || !this.sys.isActive()) return;
     this.scene.launch('Pause');
   }
 }

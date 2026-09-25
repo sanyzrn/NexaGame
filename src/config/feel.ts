@@ -350,6 +350,63 @@ export const FEEL = {
     holdMs: 1500,
   },
 
+  // ---------------------------------------------------------------- screens (M5)
+
+  /** Title: the arena at dusk, the camera up high; «نبرد!» flies it down into the arena. */
+  title: {
+    camZoom: 1.14,
+    /** Camera centre while on the title (the wall and the Div's silhouette up top). */
+    focusY: 830,
+    /** Slow drift of the camera (parallax against the ember layers). */
+    driftPx: 18,
+    driftMs: 9000,
+    /** Dusk grade: indigo sky → ember horizon, multiplied over the world. */
+    dusk: { top: '#5a4a9a', mid: '#e8906a', bottom: '#3a2a4a', alpha: 0.85, darken: 0.18 },
+    embers: { perSec: 9, lifeMs: [3800, 6500] as const },
+    /** The Div behind the wall: a dark silhouette with glowing eyes. */
+    silhouetteTint: 0x24163a,
+    /** The flight into the arena: a small push toward the wall first, then the sweep down. */
+    pushMs: 380,
+    pushZoom: 1.22,
+    flyMs: 1500,
+    buttonPulseMs: 1100,
+    shineEveryMs: 4200,
+  },
+
+  /** First-play tutorial: the ghost finger's loop and pacing. */
+  tutorial: {
+    ghostLoopMs: 3000,
+    /** Idle this long (no finger down) before the ghost shows again. */
+    ghostIdleMs: 1400,
+    praiseMs: 1100,
+    /** Golden step: tries before it moves on anyway. */
+    goldenTries: 3,
+  },
+
+  /** Result screen. */
+  result: {
+    floodMs: 900,
+    panelMs: 700,
+    countMs: 520,
+    rowGapMs: 140,
+    tickEveryMs: 45,
+    starGapMs: 380,
+    groupDrainMs: 1400,
+  },
+
+  /**
+   * Surprise: واکنش هم‌رزمان. After the stars land, teammates "reply" in Telegram-style chat
+   * bubbles (typing dots first) with a line that fits the run; a flawless run gets the whole
+   * group's crown cheer and confetti. Tap a bubble to send a heart back.
+   */
+  reactions: {
+    enabled: true,
+    count: 2,
+    typingMs: 850,
+    gapMs: 700,
+    confetti: 70,
+  },
+
   /** Phaser FX (glow, barrel, bloom, colour matrix). Only in WebGL, and off with "light effects". */
   shaderFx: true,
 

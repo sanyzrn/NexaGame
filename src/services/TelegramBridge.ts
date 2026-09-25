@@ -27,6 +27,8 @@ interface TgWebApp {
   setBackgroundColor(color: string): void;
   setBottomBarColor?(color: string): void;
   openTelegramLink(url: string): void;
+  /** Bot API 8.0: shares a message prepared with savePreparedInlineMessage. */
+  shareMessage?(id: string, cb?: (sent: boolean) => void): void;
   onEvent(event: string, cb: () => void): void;
   offEvent(event: string, cb: () => void): void;
   HapticFeedback?: TgHapticFeedback;
@@ -124,6 +126,14 @@ export class TelegramBridge {
     if (!wa || !this.isTelegram) return () => {};
     wa.onEvent(event, cb);
     return () => wa.offEvent(event, cb);
+  }
+
+  /** Shares a prepared inline message (needs a backend and Bot API 8.0). */
+  shareMessage(id: string): boolean {
+    const wa = this.webApp;
+    if (!wa || !this.isTelegram || !wa.isVersionAtLeast('8.0') || !wa.shareMessage) return false;
+    wa.shareMessage(id);
+    return true;
   }
 
   /** Opens Telegram's share sheet with a link + text (the only share path without a backend). */
