@@ -2,8 +2,8 @@
 
 A playable vertical slice of a Telegram Mini App archery game: Phaser 3, TypeScript and Vite.
 
-**Status: M2, five waves of imps, shield-bearers and flyers in a living arena, with hearts, a combo counter and a defeat screen. The White Div idles behind the wall.**
-Next: M3 (the White Div boss phase), then M4 (HUD and team feel), M5 (screens, Hero Card, share) and M6 (performance pass and deploy).
+**Status: M4. Three waves, then the White Div's boss fight and the team finisher (M3), now fought alongside a simulated group: the group Div bar, teammate toasts, the chain, the rescue and the teammates' volley.**
+Next: M5 (screens, Hero Card, share) and M6 (performance pass and deploy).
 
 ## Run
 
@@ -41,6 +41,20 @@ Enemies appear at the top edge in a puff of purple smoke and walk down. If one r
 Each arrow that hits keeps the **combo** going (the ×N badge on the left); an arrow that hits nothing, or losing a heart, ends it. After wave 5 the waves repeat with tougher enemies until the boss phase lands in M3.
 
 The pause menu has **Effects: full / light**. Light halves every particle count and turns the light shafts off, for weak phones. The choice is saved on the device.
+
+## Team feel (simulated group)
+
+Every run is fought with a group, «لشکر دوستان» (six members in `src/config/team.ts`, each of a school: رستمی / آرشی / سیمرغی). In the demo the members are simulated by `MockGameService`, and the UI only talks to the `GroupSession` interface, so a real backend can replace the mock without UI changes.
+
+- **Group Div bar** (top): the whole group's shared foe, in Persian percent, with the group's banner. Every hit you land sends a **gold stream** from the hit point up into the bar, and your running share («سهم تو») ticks up under it. A teammate's blow flies from their toast to the bar as a spark, then drains a chunk (white trail, a «−N» floater, the banner flutters).
+- **Teammate toasts** (right): avatar, name and what they did (hit, critical, lit or fanned the chain, joined the fight). Two at most, queued. They never appear in the golden window, at full draw, in cutscenes, the finisher or the rescue, and they wait for a calm moment (or 2.6 s at most while you are busy).
+- **Chain (زنجیرهٔ درفش)** (left, under the hearts): teammates raise it (×۱٫۲ → ×۱٫۵ → ×۲) and your hits keep it burning. When it burns out it drops one tier. The multiplier applies to damage dealt to the group Div. The flame, glow and embers grow with each tier.
+- **Rescue (یاری هم‌رزم)**: the first time your last heart goes, the screen dims to a spotlight, a teammate's golden spirit flies in from the banner, and you come back with one heart, a short golden invulnerability, and a shockwave that clears the enemies around you. Once per run.
+- **Surprise: the teammates' volley (تیرباران هم‌رزمان)**: when enemies crowd the hero (or one is about to reach them on the last heart), a war horn sounds, the teammates in the fight rise along the bottom edge behind the hero, and each fires one arrow in their school's colour that arcs over the arena and plunges onto the enemy nearest the hero. Their name pops above the hit. At most twice per run. It can be switched off with `FEEL.volley.enabled`.
+
+The pause menu is its own scene: while it is open the game and the HUD are truly paused (updates, tweens, timers, particles, the teammates) and the audio is held mid-note.
+
+**Safe areas:** the top row (hearts, group bar, chain, pause) moves below phone notches (`env(safe-area-inset-*)`) and Telegram's own controls in fullscreen (`safeAreaInset` + `contentSafeAreaInset`). The offset only applies where the unsafe band actually overlaps the letterboxed canvas. Add `?safetop=60` to the URL to simulate a 60 px notch on desktop.
 
 ## Test on your phone
 
@@ -91,6 +105,10 @@ All gameplay numbers live in `src/config/balance.ts`. Times are in ms and distan
 | `hero` | `hearts` (3), `invulnerableMs` after a hit |
 | `enemies` | per type: `hp`, `speed` (px/s); shield `frontalDeg` (how head-on an arrow must be to clang) |
 | `waves` | `startDelayMs`, `betweenMs`, `sideMargin`, `loopHpScale` |
+| `chain` | `multipliers` (×1, ×1.2, ×1.5, ×2), `durationMs` per tier, `hitExtendMs` / `critExtendMs`, `dropRefill` |
+| `rescue` | `hearts` restored (1), `shieldMs` (invulnerable shimmer), `clearRadius` |
+
+The mock group lives in `src/config/team.ts`: `SCHOOLS` (names, colours), `MOCK_GROUP` (members, who is already in the fight, the group Div's hp) and `MOCK_PACING` (how often teammates act, damage per school, crit odds, the odds of each activity).
 
 The waves themselves are in `src/data/waves.ts`: each group says when (`at`), what (`type`), how many (`count`, one every `every` ms) and where (`x`, 0 = left wall … 1 = right wall, a list, or random). The spawn and attack lines are in `src/data/arena.ts`.
 
@@ -109,6 +127,10 @@ Every animation, lighting and particle number lives in `src/config/feel.ts`. All
 | `arrow`, `numbers` | trails, stick time (1.5 s), quiver, deflect; damage-number pop and rise |
 | `particles` | per-event particle counts at full quality |
 | `enemy`, `imp`, `shield`, `flyer` | spawn pop, walk tilt/bob/stride, hit flash, squash, death, hp-bar trail, lunge; per-type behaviour |
+| `groupBar`, `stream` | group bar size, drain and trail timing, banner sway; gold-stream motes per hit/crit/kill, flight time, curve, pool |
+| `toast` | toast slots, slide in/out, hold, busy patience, gap, spark flight |
+| `chain`, `combo`, `hearts` | chain flame size/colour/glow/embers per tier, warning blink; combo tiers, flames, text colours, shatter; heart layout and refill |
+| `rescue`, `volley` | rescue slow-mo, dim, spirit timing; the volley's trigger (danger zone, cooldown, max per run), arrows, arc, damage (`volley.enabled` is the surprise's flag) |
 
 ## Performance and particle budget
 
@@ -132,7 +154,7 @@ src/
   data/                   arena.ts (layout), entities.ts (per-pose anchors, scales, hitboxes, shadows), waves.ts
   assets/                 manifest.ts, Art.ts (key → atlas frame / image / placeholder, anchors, fallbacks), placeholders.ts, fxTextures.ts
   render/                 Atmosphere (bg shader, grade, shafts, motes), BendSprite (bendable pose strip), Shadow
-  scenes/                 Boot → Preload → Game (+ Hud on top)      [Title, Result: M5]
+  scenes/                 Boot → Preload → Game (+ Hud on top, + Pause over both)      [Title, Result: M5]
   systems/
     AimSystem.ts          point-and-release input, smoothing, charge, cancel     (real time)
     charge.ts             pure charge curve + shot stats (unit tested)
@@ -141,13 +163,17 @@ src/
     WaveSystem.ts         wave schedule, pooled enemies, wave start/clear signals   (world time)
     AimView.ts            dotted trajectory, lock-on reticle, charge ring, cancel
     FX.ts / TimeCtl.ts    particles, shake, hit-stop / slow-mo
-    Audio.ts              procedural Web Audio SFX + mute
+    Audio.ts              procedural Web Audio SFX + mute + hold (pause)
+    Volley.ts             the teammates' volley (surprise)
   entities/               Hero, Boss (idle White Div), Decor (pillars, braziers, banners, pots), Enemy (pooled, all three types)
-  services/               TelegramBridge, Haptics, Settings (effects quality, tutorial), GameService + MockGameService
-  ui/                     kit (code-drawn panels, buttons, ribbons, toggles, banners), Button + Toggle, DamageNumbers, TutorialBanner
+  services/               TelegramBridge, Haptics, Settings, SafeArea, GameService + MockGameService + MockGroupSession, chain.ts (pure, unit tested)
+  ui/                     kit (code-drawn panels, buttons, ribbons, toggles, banners, ornaments), Button + Toggle, DamageNumbers, TutorialBanner,
+                          GroupBar, GoldStream, TeamToasts, SparkFlight, ChainBadge, ComboBadge, Hearts, RescueSpirit, avatar
   debug/                  DebugOverlay
 ```
 
 Systems talk through typed `Signal`s, and `GameScene` only wires them together. `GameService` is the backend seam: the demo uses `MockGameService`, and a Cloudflare Workers implementation can drop in later. That includes `prepareShare()` for real image sharing via `WebApp.shareMessage`.
+
+`GameService.joinGroup()` opens a `GroupSession` for the run. It is pull-based: the HUD takes an activity with `next()` only when it has a calm moment to show it, and the activity's effect on the shared state (hp, chain, members) is committed at that moment, so what the player sees never runs ahead of or behind the state. A network implementation buffers incoming events behind `next()` the same way. Member avatars are generated (school-coloured disc and initial). Give a member a `photoUrl` and the same texture is repainted with their Telegram photo.
 
 The Telegram SDK is vendored at `public/vendor/telegram-web-app.js`, so the game never waits on telegram.org. To update it, re-download it from `https://telegram.org/js/telegram-web-app.js`.

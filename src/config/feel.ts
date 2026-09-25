@@ -215,6 +215,141 @@ export const FEEL = {
     gustMs: 1700,
   },
 
+  // ---------------------------------------------------------------- team feel (HUD)
+
+  /** The group Div bar at the top: the whole group's shared foe. */
+  groupBar: {
+    width: 560,
+    /** Displayed fill eases to the value with this time constant. */
+    drainMs: 140,
+    /** A teammate's chunk: the white trail waits, then drains. */
+    trailDelayMs: 420,
+    trailDrainMs: 520,
+    /** Gold flare at the fill's edge when the player's stream lands. */
+    edgeFlareMs: 260,
+    bannerSwayDeg: 4,
+    bannerSwayMs: 3800,
+  },
+
+  /** Gold stream from the player's hit up to the group bar ("my shot → our goal"). */
+  stream: {
+    /** Motes per damaging hit / crit / kill bonus. */
+    motes: 3,
+    critMotes: 6,
+    killBonus: 2,
+    staggerMs: 35,
+    flightMs: [520, 760] as const,
+    /** Sideways wander of the curve (px) and how high above the hit the control point sits. */
+    spreadPx: 220,
+    liftPx: 380,
+    trailChance: 0.7,
+    pool: 48,
+  },
+
+  /** Teammate toasts (right side, RTL: avatar on the right). */
+  toast: {
+    /** Scale of ui_toast_frame (its art is 480×149 inside a 640×160 box). */
+    scale: 1,
+    /** Right edge of the art, and the two slot centres (y). */
+    rightX: 1068,
+    slotsY: [360, 520] as readonly number[],
+    inMs: 460,
+    outMs: 260,
+    holdMs: 2600,
+    /** Waits at most this long for a calm moment, then shows while busy (never while blocked). */
+    busyPatienceMs: 2600,
+    /** Min gap between two toasts appearing. */
+    gapMs: 650,
+    sparkMs: 620,
+  },
+
+  /** زنجیرهٔ درفش indicator: flame, multiplier and countdown ring, per tier (index = tier). */
+  chain: {
+    x: 96,
+    y: 200,
+    ringR: 44,
+    flameScale: [0, 0.62, 0.84, 1.08] as readonly number[],
+    flameTint: [0, 0xff7a1c, 0xffb42a, 0xffd84a] as readonly number[],
+    coreTint: [0, 0xffd890, 0xfff0b0, 0x8fe4ff] as readonly number[],
+    glowAlpha: [0, 0.3, 0.45, 0.6] as readonly number[],
+    /** Embers per second. */
+    embers: [0, 3, 10, 24] as readonly number[],
+    ringColor: [0, 0xff9a3a, 0xffd24a, 0xfff6d8] as readonly number[],
+    /** Under this much time left the ring blinks. */
+    warnAt: 0.22,
+  },
+
+  /** Combo badge tiers (combo ≥ value) and their flames. */
+  combo: {
+    x: 118,
+    y: 640,
+    tiers: [2, 5, 10, 20] as readonly number[],
+    /** Flame particles per second behind the badge, per tier. */
+    flames: [0, 6, 14, 26] as readonly number[],
+    flameScale: [0, 0.45, 0.65, 0.9] as readonly number[],
+    flameTint: [
+      [0xff7a2a, 0xffb040],
+      [0xff7a2a, 0xffb040],
+      [0xffa030, 0xffe070],
+      [0xffe070, 0xffffff, 0x9fe8ff],
+    ] as readonly (readonly number[])[],
+    textStops: [
+      ['#e8402c', '#a8160e', '#5a0806'],
+      ['#e8402c', '#a8160e', '#5a0806'],
+      ['#ff5a1c', '#b8240a', '#5a0a02'],
+      ['#ff2e5a', '#a8083a', '#40021e'],
+    ] as readonly (readonly string[])[],
+    shatter: { grid: 3, ms: 650, speed: [260, 560] as const, gravity: 1400, spinDeg: 360 },
+  },
+
+  hearts: {
+    scale: 0.55,
+    x: 52,
+    gap: 70,
+    y: 76,
+    refillMs: 520,
+  },
+
+  /** یاری هم‌رزم: a teammate's spirit revives the hero once per run. */
+  rescue: {
+    enabled: true,
+    slowMo: 0.15,
+    dimAlpha: 0.72,
+    dimInMs: 320,
+    spiritDelayMs: 380,
+    spiritFlyMs: 1100,
+    reviveHoldMs: 450,
+    undimMs: 600,
+    shockPxPerMs: 2.2,
+  },
+
+  /**
+   * Surprise: تیرباران هم‌رزمان (the host's volley). When the arena gets crowded near the hero, a war
+   * horn sounds, the teammates who are in the fight rise along the bottom edge behind the hero, and
+   * each looses one arrow in their school's colour that arcs over and plunges onto the enemy nearest
+   * the hero, with their name popping above the hit.
+   */
+  volley: {
+    enabled: true,
+    /** Enemies in the danger zone (feet below this y) needed to call it… */
+    dangerY: 1030,
+    dangerCount: 3,
+    /** …or one enemy about to lunge while the hero is on their last heart. */
+    lastHeartY: 1300,
+    firstAfterMs: 15000,
+    cooldownMs: 40000,
+    maxPerRun: 2,
+    /** One arrow per active teammate, up to this many. */
+    maxArrows: 6,
+    damage: 140,
+    riseMs: 520,
+    firstShotMs: 700,
+    staggerMs: 110,
+    flightMs: 820,
+    arcPx: 520,
+    holdMs: 1500,
+  },
+
   /** Phaser FX (glow, barrel, bloom, colour matrix). Only in WebGL, and off with "light effects". */
   shaderFx: true,
 
@@ -246,6 +381,8 @@ export const FEEL = {
     /** A tiny scale punch that hides pose swaps. */
     posePunch: 0.03,
     hurt: { ms: 560, flashMs: 120, knockbackPx: 26, blinkMs: 80, invulnerableMs: 900 },
+    /** Golden shimmer while shielded after a rescue. */
+    shimmer: { hz: 3.2, tint: 0xffe08a },
   },
 
   // ---------------------------------------------------------------- arrows, numbers

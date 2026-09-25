@@ -408,3 +408,224 @@ export function gradientText<T extends Phaser.GameObjects.Text>(t: T, stops: rea
   t.setShadow(0, 5, 'rgba(0,0,0,0.55)', 8, true, true);
   return t;
 }
+
+// ---------------------------------------------------------------- team HUD & ornaments
+
+/** The group's درفش (standard) for the group bar: a gilded pole, a crimson swallow-tailed flag with a sun disc. */
+export function groupBannerTex(scene: Phaser.Scene): string {
+  return make(scene, 'ui_group_banner', 112, 160, (ctx) => {
+    // pole + finial
+    ctx.fillStyle = goldStroke(ctx, 0, 160);
+    ctx.fillRect(14, 16, 7, 140);
+    gem(ctx, 17.5, 12, 8);
+    // flag, hanging from the pole's top
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 4;
+    ctx.beginPath();
+    ctx.moveTo(21, 22);
+    ctx.bezierCurveTo(50, 16, 78, 28, 104, 22);
+    ctx.lineTo(104, 112);
+    ctx.lineTo(80, 96);
+    ctx.lineTo(60, 124);
+    ctx.lineTo(42, 100);
+    ctx.bezierCurveTo(34, 104, 27, 108, 21, 112);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(21, 20, 104, 120);
+    g.addColorStop(0, '#e8483a');
+    g.addColorStop(0.6, '#a8201a');
+    g.addColorStop(1, '#5a0c0a');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = goldStroke(ctx, 20, 124);
+    ctx.stroke();
+    // sun disc with rays
+    const cx = 62;
+    const cy = 62;
+    ctx.fillStyle = goldStroke(ctx, cy - 22, cy + 22);
+    ctx.beginPath();
+    for (let i = 0; i < 24; i++) {
+      const r = i % 2 ? 13 : 22;
+      const a = (i / 24) * Math.PI * 2;
+      ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    const d = ctx.createRadialGradient(cx - 3, cy - 3, 1, cx, cy, 11);
+    d.addColorStop(0, '#fffbe0');
+    d.addColorStop(1, '#f0a830');
+    ctx.fillStyle = d;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+/** A white flame glyph (tinted per chain tier): an S-curved tongue, brightest at the base. */
+export function flameIconTex(scene: Phaser.Scene): string {
+  return make(scene, 'ui_flame_icon', 96, 128, (ctx) => {
+    ctx.translate(48, 124);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-40, -4, -46, -40, -26, -66);
+    ctx.bezierCurveTo(-18, -50, -10, -48, -8, -56);
+    ctx.bezierCurveTo(-14, -80, 2, -104, 10, -120);
+    ctx.bezierCurveTo(12, -96, 40, -80, 40, -46);
+    ctx.bezierCurveTo(40, -18, 24, 0, 0, 0);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, -120, 0, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0.55)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.9)');
+    g.addColorStop(1, 'rgba(255,255,255,1)');
+    ctx.fillStyle = g;
+    ctx.fill();
+  });
+}
+
+/** Full-screen dim with a soft spotlight hole at (hx, hy) (0..1 of the screen), cached per spot. */
+export function spotDimTex(scene: Phaser.Scene, hx: number, hy: number): string {
+  const key = `ui_spotdim_${Math.round(hx * 100)}_${Math.round(hy * 100)}`;
+  return make(scene, key, 108, 192, (ctx) => {
+    const g = ctx.createRadialGradient(hx * 108, hy * 192, 8, hx * 108, hy * 192, 120);
+    g.addColorStop(0, 'rgba(10,8,20,0)');
+    g.addColorStop(0.28, 'rgba(10,8,20,0.35)');
+    g.addColorStop(1, 'rgba(4,2,10,0.95)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 108, 192);
+  });
+}
+
+/**
+ * Shamseh: a gilded sun medallion (sixteen petals around a lapis centre with a turquoise star),
+ * crowning panels. Drawn once per radius.
+ */
+export function shamsehTex(scene: Phaser.Scene, r: number): string {
+  const s = r * 2 + 24;
+  return make(scene, `ui_shamseh_${r}`, s, s, (ctx) => {
+    ctx.translate(s / 2, s / 2);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    ctx.beginPath();
+    const n = 16;
+    const ri = r * 0.62;
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2;
+      const a1 = ((i + 0.5) / n) * Math.PI * 2;
+      const a2 = ((i + 1) / n) * Math.PI * 2;
+      if (i === 0) ctx.moveTo(Math.cos(a0) * ri, Math.sin(a0) * ri);
+      ctx.quadraticCurveTo(Math.cos(a1) * r * 1.12, Math.sin(a1) * r * 1.12, Math.cos(a2) * ri, Math.sin(a2) * ri);
+    }
+    ctx.closePath();
+    ctx.fillStyle = goldStroke(ctx, -r, r);
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(90,50,8,0.8)';
+    ctx.stroke();
+    const lap = ctx.createRadialGradient(0, -r * 0.2, 2, 0, 0, r * 0.62);
+    lap.addColorStop(0, UI.lapisTop);
+    lap.addColorStop(1, UI.lapisBottom);
+    ctx.fillStyle = lap;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.58, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = UI.gold;
+    ctx.stroke();
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const rs = i % 2 ? r * 0.2 : r * 0.44;
+      const a = (i / 16) * Math.PI * 2 - Math.PI / 2;
+      ctx.lineTo(Math.cos(a) * rs, Math.sin(a) * rs);
+    }
+    ctx.closePath();
+    const st = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.44);
+    st.addColorStop(0, '#d8fff8');
+    st.addColorStop(1, UI.turquoise);
+    ctx.fillStyle = st;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = goldStroke(ctx, -r * 0.4, r * 0.4);
+    ctx.stroke();
+    gem(ctx, 0, 0, r * 0.1);
+  });
+}
+
+/**
+ * Lachak: a quarter-medallion of gold arabesque for a panel's inner corner (drawn for the top-left
+ * corner; flip it for the others).
+ */
+export function lachakTex(scene: Phaser.Scene, size: number): string {
+  return make(scene, `ui_lachak_${size}`, size, size, (ctx) => {
+    const s = size;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(s * 0.92, 0);
+    ctx.bezierCurveTo(s * 0.8, s * 0.2, s * 0.62, s * 0.2, s * 0.55, s * 0.32);
+    ctx.bezierCurveTo(s * 0.42, s * 0.42, s * 0.42, s * 0.42, s * 0.32, s * 0.55);
+    ctx.bezierCurveTo(s * 0.2, s * 0.62, s * 0.2, s * 0.8, 0, s * 0.92);
+    ctx.closePath();
+    const f = ctx.createRadialGradient(0, 0, 0, 0, 0, s);
+    f.addColorStop(0, 'rgba(60,196,180,0.55)');
+    f.addColorStop(1, 'rgba(39,56,110,0.2)');
+    ctx.fillStyle = f;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = goldStroke(ctx, 0, s);
+    ctx.stroke();
+    // eslimi curls
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(255,220,140,0.85)';
+    const curls: [number, number, number][] = [[s * 0.42, s * 0.14, Math.PI], [s * 0.14, s * 0.42, Math.PI * 1.5]];
+    for (const [x, y, a0] of curls) {
+      ctx.beginPath();
+      ctx.arc(x, y, s * 0.1, a0, a0 + Math.PI * 1.5);
+      ctx.stroke();
+    }
+    gem(ctx, s * 0.2, s * 0.2, s * 0.07);
+  });
+}
+
+/** A gold eslimi divider: a line fading at both ends, twin curls and a gem at the centre. */
+export function dividerTex(scene: Phaser.Scene, w: number): string {
+  return make(scene, `ui_divider_${w}`, w, 40, (ctx) => {
+    const y = 20;
+    ctx.lineCap = 'round';
+    const g = ctx.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, 'rgba(243,198,90,0)');
+    g.addColorStop(0.2, 'rgba(243,198,90,0.8)');
+    g.addColorStop(0.8, 'rgba(243,198,90,0.8)');
+    g.addColorStop(1, 'rgba(243,198,90,0)');
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(10, y);
+    ctx.lineTo(w / 2 - 60, y);
+    ctx.moveTo(w / 2 + 60, y);
+    ctx.lineTo(w - 10, y);
+    ctx.stroke();
+    ctx.strokeStyle = UI.gold;
+    ctx.lineWidth = 2.5;
+    for (const side of [-1, 1]) {
+      // an S-curl on each side of the gem
+      const x = w / 2 + side * 34;
+      ctx.beginPath();
+      ctx.arc(x, y - 6, 7, Math.PI / 2, Math.PI / 2 + Math.PI * 1.4 * side, side < 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x + side * 14, y + 6, 7, -Math.PI / 2, -Math.PI / 2 - Math.PI * 1.4 * side, side > 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + side * 14 + side * 7, y);
+      ctx.lineTo(w / 2 + side * 60, y);
+      ctx.stroke();
+    }
+    gem(ctx, w / 2, y, 10);
+  });
+}

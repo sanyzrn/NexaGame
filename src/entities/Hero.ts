@@ -37,6 +37,7 @@ export class Hero {
   private releasePose: string = HERO.poses.idle;
   private hurtLeft = 0;
   private invulnerableLeft = 0;
+  private shimmerLeft = 0;
   private lean = 0;
   private sparkleIn = 0;
   private punch = 0;
@@ -110,12 +111,22 @@ export class Hero {
     this.invulnerableLeft = Math.max(H.invulnerableMs, BALANCE.hero.invulnerableMs);
   }
 
+  /** Revived by a teammate: back on his feet, invulnerable for `ms` under a golden shimmer. */
+  revive(ms: number): void {
+    this.hurtLeft = 0;
+    this.shimmerLeft = ms;
+    this.invulnerableLeft = ms;
+    this.punch = 1;
+    this.fx.goldenBurst(this.bowX, this.bowY - 60);
+  }
+
   update(dt: number, aim: AimSystem): void {
     const F = FEEL.hero;
     this.t += dt;
     this.sinceRelease += dt;
     if (this.hurtLeft > 0) this.hurtLeft -= dt;
     if (this.invulnerableLeft > 0) this.invulnerableLeft -= dt;
+    if (this.shimmerLeft > 0) this.shimmerLeft -= dt;
     this.flick.update(dt);
     this.bowShake.update(dt);
     this.punch = Math.max(0, this.punch - dt / 120);
@@ -169,14 +180,24 @@ export class Hero {
       .setScale(HERO.scale * (1 - F.tension * d + squash) * p, HERO.scale * p)
       .setRotation(this.lean);
 
-    // Hurt tint and invulnerability blink.
-    if (this.hurtLeft > H.ms - H.flashMs) {
+    // Hurt tint and invulnerability blink (or the rescue's golden shimmer, which doesn't blink).
+    if (this.shimmerLeft > 0) {
+      const S = F.shimmer;
+      const fade = Math.min(1, this.shimmerLeft / 400);
+      const w = (0.5 + 0.5 * Math.sin((this.t / 1000) * S.hz * TAU)) * fade;
+      const mix = (shift: number) => Math.round(255 - (255 - ((S.tint >> shift) & 0xff)) * w);
+      b.setTint(Phaser.Display.Color.GetColor(mix(16), mix(8), mix(0)));
+      b.rope.setAlpha(1);
+      if (Math.random() < 0.35 * fade) this.fx.sparkleAt(this.x, this.y - 170, 150);
+    } else if (this.hurtLeft > H.ms - H.flashMs) {
       b.setTint(0xff3020, true);
     } else {
       const gb = Math.round(255 - 150 * hurtK);
       b.setTint(Phaser.Display.Color.GetColor(255, gb, gb));
     }
-    b.rope.setAlpha(this.invulnerableLeft > 0 && Math.floor(this.invulnerableLeft / H.blinkMs) % 2 === 0 ? 0.45 : 1);
+    if (this.shimmerLeft <= 0) {
+      b.rope.setAlpha(this.invulnerableLeft > 0 && Math.floor(this.invulnerableLeft / H.blinkMs) % 2 === 0 ? 0.45 : 1);
+    }
 
     if (this.hasFeather) {
       this.feather.setPosition(this.bowX + 26 + Math.sin(this.t / 400) * 4, this.bowY - 14 + Math.sin(this.t / 260) * 5)

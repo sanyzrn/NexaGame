@@ -4,6 +4,7 @@ import { COLORS, DESIGN_H, DESIGN_W } from './config/display';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { HudScene } from './scenes/HudScene';
+import { PauseScene } from './scenes/PauseScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { services } from './services';
 
@@ -30,6 +31,7 @@ async function loadFonts(): Promise<void> {
 
 async function start(): Promise<void> {
   services.telegram.init(COLORS.letterboxCss);
+  services.safeArea.init();
   const [webp] = await Promise.all([detectWebp(), loadFonts()]);
   services.caps.webp = webp;
 
@@ -44,10 +46,11 @@ async function start(): Promise<void> {
     render: { antialias: true, powerPreference: 'high-performance' },
     disableContextMenu: true,
     banner: false,
-    scene: [BootScene, PreloadScene, GameScene, HudScene],
+    scene: [BootScene, PreloadScene, GameScene, HudScene, PauseScene],
   });
 
   services.telegram.on('viewportChanged', () => game.scale.refresh());
+  services.safeArea.onChange.add(() => game.scale.refresh());
   // Dev only: lets automated screenshots and the console inspect the running game.
   if (import.meta.env.DEV) (window as unknown as { __game: Phaser.Game }).__game = game;
   document.addEventListener('visibilitychange', () => {

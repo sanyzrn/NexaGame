@@ -88,6 +88,31 @@ export const BALANCE = {
     summon: { firstMs: 6000, phase1EveryMs: 11000, armorEveryMs: 8500, count: [2, 3] as const },
   },
 
+  /**
+   * زنجیرهٔ درفش: the group's damage chain. Teammates raise it a tier (and refill it), the player's
+   * hits keep it burning. When the time runs out it drops one tier, half-full.
+   */
+  chain: {
+    /** Damage multiplier to the group Div per tier (tier 0 = no chain). */
+    multipliers: [1, 1.2, 1.5, 2] as const,
+    /** Burn time per tier; higher tiers burn faster. */
+    durationMs: [0, 24000, 19000, 15000] as const,
+    /** Time the player's hits add back (capped at the tier's full time). */
+    hitExtendMs: 900,
+    critExtendMs: 1600,
+    /** After a drop, the lower tier starts this full. */
+    dropRefill: 0.5,
+  },
+
+  /** Teammate rescue: the first time the last heart is lost, a teammate revives the hero. */
+  rescue: {
+    hearts: 1,
+    /** Invulnerable (golden shimmer) after the revive. */
+    shieldMs: 2600,
+    /** Enemies this close to the hero are swept away by the revive. */
+    clearRadius: 560,
+  },
+
   waves: {
     /** Pause before the first wave, and between waves. */
     startDelayMs: 1500,

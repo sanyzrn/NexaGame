@@ -102,6 +102,15 @@ export class WaveSystem {
     }
   }
 
+  /** Enemies within `radius` of a point dissolve in gold (the rescue's shockwave), nearest first. */
+  clearNear(fromX: number, fromY: number, radius: number, pxPerMs: number): void {
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const d = Math.hypot(e.x - fromX, e.y - fromY);
+      if (d <= radius) this.scene.time.delayedCall(d / pxPerMs, () => e.vanish());
+    }
+  }
+
   private begin(): void {
     const info = this.info;
     info.index++;

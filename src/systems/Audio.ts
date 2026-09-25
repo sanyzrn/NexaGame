@@ -6,7 +6,9 @@ export type SfxName =
   | 'release' | 'hit' | 'crit' | 'kill' | 'bounce' | 'absorb' | 'golden' | 'ui'
   | 'clang' | 'raise' | 'step' | 'spawn' | 'taunt' | 'lunge' | 'hurt' | 'growl' | 'wave'
   | 'bang' | 'drum' | 'slam' | 'shockwave' | 'barrierUp' | 'barrierChip' | 'barrierBreak' | 'stun'
-  | 'summon' | 'bossHit' | 'heartbeat' | 'arrowLaunch' | 'shatter' | 'victory' | 'screech' | 'featherChime';
+  | 'summon' | 'bossHit' | 'heartbeat' | 'arrowLaunch' | 'shatter' | 'victory' | 'screech' | 'featherChime'
+  | 'toast' | 'teamHit' | 'chainUp' | 'chainDown' | 'comboBreak' | 'heartFill' | 'rescue' | 'horn' | 'volley'
+  | 'pause';
 
 /**
  * Procedural SFX with Web Audio — no audio files to download.
@@ -20,6 +22,7 @@ export class Audio {
   private hum: { oscs: OscillatorNode[]; gain: GainNode } | null = null;
   private choir: { oscs: OscillatorNode[]; gain: GainNode } | null = null;
   private _muted = storage.get(MUTE_KEY) === '1';
+  private held = false;
 
   get muted(): boolean {
     return this._muted;
@@ -53,7 +56,7 @@ export class Audio {
       this.master = master;
       this.noise = noise;
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx.state === 'suspended' && !this.held) void this.ctx.resume();
   }
 
   suspend(): void {
@@ -64,7 +67,18 @@ export class Audio {
   }
 
   resume(): void {
-    if (this.ctx?.state === 'suspended') void this.ctx.resume();
+    if (this.ctx?.state === 'suspended' && !this.held) void this.ctx.resume();
+  }
+
+  /**
+   * Pause menu: freezes all sound mid-note (the finisher's choir included) and resumes it exactly
+   * where it was. Nothing else (gestures, the tab becoming visible) can resume it while held.
+   */
+  hold(on: boolean): void {
+    this.held = on;
+    if (!this.ctx) return;
+    if (on && this.ctx.state === 'running') void this.ctx.suspend();
+    else if (!on && !document.hidden && this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
   // ---- Bow tension (continuous while charging) ----
@@ -378,6 +392,63 @@ export class Audio {
         this.tone(t, 'sine', 1568, 1568, 0.9, 0.1);
         this.tone(t + 0.07, 'sine', 2093, 2093, 0.8, 0.08);
         this.tone(t + 0.14, 'sine', 2637, 2637, 0.7, 0.06);
+        break;
+      case 'toast':
+        // A soft plucked tar: two notes, a friend's knock.
+        this.tone(t, 'triangle', 659, 659, 0.22, 0.09);
+        this.tone(t + 0.07, 'triangle', 988, 988, 0.3, 0.07);
+        break;
+      case 'teamHit':
+        // A teammate's blow landing on the far-away Div: muffled thud and a glint.
+        this.tone(t, 'sine', 110, 50, 0.3, 0.3 * intensity);
+        this.noiseBurst(t, 0.18, 'lowpass', 700, 200, 0.18 * intensity, 0.6);
+        this.tone(t + 0.03, 'sine', 1760, 1760, 0.25, 0.04);
+        break;
+      case 'chainUp': {
+        // Whoosh of a fanned flame, then a rising fifth (higher tiers, higher pitch).
+        const k = 1 + 0.25 * (intensity - 1);
+        this.noiseBurst(t, 0.45, 'bandpass', 400, 2600, 0.3, 0.9);
+        this.tone(t + 0.05, 'triangle', 392 * k, 392 * k, 0.3, 0.1);
+        this.tone(t + 0.16, 'triangle', 587 * k, 587 * k, 0.45, 0.1);
+        break;
+      }
+      case 'chainDown':
+        this.noiseBurst(t, 0.4, 'lowpass', 1400, 200, 0.2, 0.7);
+        this.tone(t, 'sine', 330, 196, 0.35, 0.07);
+        break;
+      case 'comboBreak':
+        // Glassy crack.
+        for (let i = 0; i < 4; i++) this.tone(t + i * 0.025, 'square', 2400 - i * 380, 900, 0.12, 0.035);
+        this.noiseBurst(t, 0.2, 'highpass', 3000, 7000, 0.22, 0.7);
+        break;
+      case 'heartFill':
+        this.tone(t, 'sine', 523, 523, 0.3, 0.1);
+        this.tone(t + 0.09, 'sine', 784, 784, 0.35, 0.1);
+        this.tone(t + 0.18, 'sine', 1046, 1046, 0.5, 0.09);
+        break;
+      case 'rescue':
+        // A held golden chord swelling in (the spirit's approach).
+        for (const [f, d] of [[392, 0], [494, 0.08], [587, 0.16], [784, 0.24]]) {
+          this.tone(t + d, 'sine', f, f, 1.4, 0.07);
+          this.tone(t + d, 'triangle', f * 2, f * 2, 1.0, 0.025);
+        }
+        this.noiseBurst(t, 1.2, 'bandpass', 2000, 5000, 0.06, 1.5);
+        break;
+      case 'horn': {
+        // Karnay war horn: two long brassy blasts.
+        for (const [d, f] of [[0, 147], [0.55, 196]]) {
+          this.tone(t + d, 'sawtooth', f * 0.97, f, 0.5, 0.1);
+          this.tone(t + d, 'sawtooth', f * 1.5, f * 1.5, 0.45, 0.04);
+        }
+        this.noiseBurst(t, 1.1, 'lowpass', 600, 300, 0.1, 0.6);
+        break;
+      }
+      case 'volley':
+        this.noiseBurst(t, 0.5, 'bandpass', 1800, 700, 0.25, 1.4);
+        this.tone(t, 'sine', 900, 500, 0.3, 0.05);
+        break;
+      case 'pause':
+        this.tone(t, 'sine', 523, 392, 0.12, 0.12);
         break;
     }
   }

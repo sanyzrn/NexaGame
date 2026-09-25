@@ -2,8 +2,9 @@ import Phaser from 'phaser';
 import { CALLIGRAPHY_FONT, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
 import type { FinisherDef } from '../data/finishers';
-import type { TeamMember } from '../data/team';
+import type { TeamMember } from '../config/team';
 import { services } from '../services';
+import { avatarTex } from '../ui/avatar';
 import { gradientText } from '../ui/kit';
 import { easeOutBack, easeInOutSine } from '../utils/ease';
 
@@ -178,31 +179,9 @@ export class TeamFinisher {
 
   private buildSpirit(m: TeamMember, i: number): Spirit {
     const scene = this.scene;
-    const key = `avatar_${i}_${m.name}`;
-    if (!scene.textures.exists(key)) {
-      const tex = scene.textures.createCanvas(key, 96, 96)!;
-      const ctx = tex.getContext();
-      const col = `#${m.color.toString(16).padStart(6, '0')}`;
-      const grad = ctx.createRadialGradient(40, 36, 6, 48, 48, 44);
-      grad.addColorStop(0, '#ffffff');
-      grad.addColorStop(0.25, col);
-      grad.addColorStop(1, '#1a1030');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(48, 48, 42, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = '#ffd24a';
-      ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `900 44px ${FONT_FAMILY}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(m.name.charAt(0), 48, 50);
-      tex.refresh();
-    }
+    const key = m.avatar ?? avatarTex(scene, { name: m.name, color: m.color });
     const orb = scene.add.image(0, 0, 'fx_glow').setTint(this.def.color).setBlendMode(Phaser.BlendModes.ADD).setScale(2.2);
-    const avatar = scene.add.image(0, 0, key).setScale(0.8);
+    const avatar = scene.add.image(0, 0, key).setDisplaySize(77, 77);
     const name = scene.add.text(0, 52, m.name, {
       fontFamily: FONT_FAMILY, fontSize: '28px', fontStyle: '900', color: '#fff4d0', rtl: true, stroke: '#3a2208', strokeThickness: 6,
     }).setOrigin(0.5);

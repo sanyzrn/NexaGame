@@ -3,6 +3,8 @@
  * can replace it later without touching gameplay code.
  */
 
+import type { School } from '../config/team';
+
 export interface PlayerProfile {
   id: string;
   name: string;
@@ -45,9 +47,68 @@ export type ShareTicket =
   /** Prepared inline message (Bot API savePreparedInlineMessage) for WebApp.shareMessage — needs a backend. */
   | { kind: 'preparedMessage'; id: string };
 
+// ---------------------------------------------------------------- live group (team feel)
+
+export interface GroupMember {
+  id: string;
+  name: string;
+  school: School;
+  /** In today's fight (members can join during a run). */
+  active: boolean;
+  /** Telegram profile photo; the UI draws a generated avatar until (or instead of) it. */
+  photoUrl?: string;
+}
+
+/** Something a teammate did. The UI turns each into a toast (and a bar / chain effect). */
+export type TeamActivity =
+  | { kind: 'damage'; member: GroupMember; amount: number; crit: boolean }
+  /** `rose`: the chain went up a tier (false: it was at the top and only refilled). */
+  | { kind: 'chain'; member: GroupMember; tier: number; rose: boolean }
+  | { kind: 'join'; member: GroupMember }
+  | { kind: 'rescue'; member: GroupMember };
+
+export interface ChainView {
+  /** 0 = no chain. */
+  readonly tier: number;
+  readonly multiplier: number;
+  /** Burn time left, 1 → 0. */
+  readonly progress: number;
+}
+
+/**
+ * A live view of the player's group during a run. Pull-based: the UI takes activities with
+ * `next()` when it is ready to show one (calm moments only), and an activity's effect on the
+ * shared state (hp, chain, members) is committed when it is taken, so what the player sees and
+ * the state never disagree. A network implementation buffers incoming events behind `next()`.
+ */
+export interface GroupSession {
+  readonly name: string;
+  readonly bossName: string;
+  readonly hp: number;
+  readonly hpMax: number;
+  readonly members: readonly GroupMember[];
+  readonly chain: ChainView;
+  /** Newest first (committed activities only). */
+  readonly recent: readonly TeamActivity[];
+  /** Activities waiting to be taken. */
+  readonly pending: number;
+  /** Advances the session (real ms while the run is not paused): chain burn, simulation, polling. */
+  tick(ms: number): void;
+  next(): TeamActivity | null;
+  /** The player hurt a foe; returns the damage the group Div takes (chain applied). Keeps the chain burning. */
+  addPlayerDamage(amount: number, crit: boolean): number;
+  /** Teammates' damage outside the activity feed (the volley), chain applied; returns it. */
+  addAllyDamage(member: GroupMember, amount: number): number;
+  /** Someone answers the call for help (null = nobody can). Commits a 'rescue' activity. */
+  requestRescue(): GroupMember | null;
+  close(): void;
+}
+
 export interface GameService {
   getProfile(): Promise<PlayerProfile>;
   getGroup(): Promise<GroupInfo>;
+  /** Opens the live group view for one run. */
+  joinGroup(): Promise<GroupSession>;
   submitRun(result: RunResult): Promise<RunSubmitResponse>;
   prepareShare(request: ShareRequest): Promise<ShareTicket>;
 }

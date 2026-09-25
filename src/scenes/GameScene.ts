@@ -7,7 +7,6 @@ import { FEEL } from '../config/feel';
 import { ARENA } from '../data/arena';
 import { HERO, PILLAR } from '../data/entities';
 import { FINISHERS } from '../data/finishers';
-import { DEMO_TEAM, PLAYER_COLOR } from '../data/team';
 import { DebugOverlay } from '../debug/DebugOverlay';
 import { Boss } from '../entities/Boss';
 import { Decor } from '../entities/Decor';
@@ -24,11 +23,13 @@ import { ProjectileSystem, type ArrowEndEvent, type HitEvent, type Point, type T
 import { Simorgh } from '../systems/Simorgh';
 import { TeamFinisher } from '../systems/TeamFinisher';
 import { TimeCtl } from '../systems/TimeCtl';
+import { Volley } from '../systems/Volley';
 import { WaveSystem, type WaveInfo } from '../systems/WaveSystem';
 import { DamageNumbers } from '../ui/DamageNumbers';
 import { TutorialBanner } from '../ui/TutorialBanner';
 import { easeInCubic, easeInOutSine } from '../utils/ease';
 import { faDigits } from '../utils/fa';
+import type { TeamGate } from '../ui/TeamToasts';
 import type { HudScene } from './HudScene';
 
 /** The raised top line during the boss fight: arrows fly past the wall to him (and fade in the sky). */
@@ -49,9 +50,11 @@ interface Flight {
 }
 
 /**
- * M3: three waves, then the White Div rises and fights (barrier, stun, summons), ending with the
- * team finisher, the Arrow of Arash. Systems are independent; this scene builds them, wires their
- * signals into sound, effects, camera and HUD, and implements the enemies' hooks.
+ * Three waves, then the White Div rises and fights (barrier, stun, summons), ending with the team
+ * finisher, the Arrow of Arash. The group fights along: every hit feeds the group Div (HUD), a
+ * teammate revives the hero once (rescue), and the teammates' volley answers a crowded arena.
+ * Systems are independent; this scene builds them, wires their signals into sound, effects, camera
+ * and HUD, and implements the enemies' hooks.
  */
 export class GameScene extends Phaser.Scene implements EnemyHooks {
   private timeCtl!: TimeCtl;
@@ -72,6 +75,12 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private tutorial: TutorialBanner | null = null;
   private finisher: TeamFinisher | null = null;
   private flight: Flight | null = null;
+  private volley!: Volley;
+  private volleyCount = 0;
+  private volleyCooldown = 0;
+  private runMs = 0;
+  private rescueUsed = false;
+  private rescuing = false;
   private readonly targets: Target[] = [];
   private readonly world: EnemyWorld = { heroX: 0, heroY: 0, aiming: false, aimX: 0, aimY: 0, aimDX: 0, aimDY: -1 };
   private readonly tmp: Point = { x: 0, y: 0 };
@@ -97,6 +106,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.defeated = this.won = this.simorghDone = false;
     this.finisher = null;
     this.flight = null;
+    this.volleyCount = this.volleyCooldown = this.runMs = 0;
+    this.rescueUsed = this.rescuing = false;
 
     this.timeCtl = new TimeCtl(this);
     // Camera moves (intro push-in, the finisher's flight) never show past the arena's edges.
@@ -122,6 +133,22 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.waves = new WaveSystem(this, this);
     this.numbers = new DamageNumbers(this);
     this.projectiles = new ProjectileSystem(this, this.collider, () => this.allTargets(), fx);
+    this.volley = new Volley(this, {
+      enemies: () => this.waves.enemies,
+      onHit: (e, archer, damage, outcome, x, y) => {
+        fx.hitSparks(x, y, false, archer.color);
+        fx.shake('hit');
+        services.audio.play('hit');
+        if (outcome === 'blocked') return;
+        this.hud.allyDamage(archer.member, damage);
+        if (outcome === 'kill') {
+          fx.swirl(e.bodyX, e.bodyY, FEEL.particles.deathSmoke, 30);
+          fx.sparkles(e.bodyX, e.bodyY);
+          services.audio.play('kill');
+        }
+      },
+      onMiss: (x, y) => fx.absorb(x, y),
+    });
 
     this.scene.launch('Hud');
     const hud = (this.hud = this.scene.get('Hud') as HudScene);
@@ -221,6 +248,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.simorgh.update(dt);
     this.hero.update(realMs, aim);
     this.projectiles.update(dt);
+    this.volley.update(dt);
+    this.runMs += dt;
+    this.maybeVolley(dt);
     this.waves.update(dt, this.world);
     this.numbers.update(dt);
     if (this.flight) this.updateFlight(realMs);
@@ -374,6 +404,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       }
       this.bossDamage += e.damage;
       this.hud.setBossHp(boss.brain.hpPct);
+      this.feedGroup(e.x, e.y, e.damage, e.crit, false);
       this.onFirstHit();
       this.setCombo(this.combo + 1);
       const gem = boss.gemHit;
@@ -411,6 +442,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
     this.numbers.spawn(t.hitX, t.hitY - t.hitR - 20, e.damage, e.crit);
     fx.hitSparks(e.x, e.y, e.crit, t.color);
+    this.feedGroup(e.x, e.y, e.damage, e.crit, e.outcome === 'kill');
     this.onFirstHit();
     this.setCombo(this.combo + 1);
     if (e.crit) {
@@ -432,6 +464,18 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       audio.play('kill');
       haptics.play('heavy');
     }
+  }
+
+  /** The player's damage flows to the group Div as a gold stream from the hit point. */
+  private feedGroup(x: number, y: number, damage: number, crit: boolean, kill: boolean, motes = 0): void {
+    const p = this.toScreen(x, y);
+    this.hud.playerDamage(p.x, p.y, damage, crit, kill, motes);
+  }
+
+  /** World → HUD (screen) px, through the camera's zoom and scroll. */
+  private toScreen(x: number, y: number): Point {
+    const cam = this.cameras.main;
+    return { x: (x - cam.worldView.x) * cam.zoom, y: (y - cam.worldView.y) * cam.zoom };
   }
 
   private onFirstHit(): void {
@@ -476,9 +520,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     cam.zoomTo(1, 300);
     cam.pan(DESIGN_W / 2, DESIGN_H / 2, 300);
 
-    const player = services.telegram.userFirstName ?? 'تو';
-    const members = [...DEMO_TEAM.members, { name: player, color: PLAYER_COLOR }];
-    this.finisher = new TeamFinisher(this.hud, FINISHERS.arash, members, {
+    this.hud.dismissToasts();
+    this.finisher = new TeamFinisher(this.hud, FINISHERS.arash, this.hud.finisherMembers(), {
       ringCenter: () => ({ x: this.hero.x, y: this.hero.y - F.ringLift }),
       onProgress: (k) => this.hero.setBlazing(k * 0.5),
       onReady: () => {
@@ -555,9 +598,13 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.tweens.add({ targets: f.beam, alpha: 0, duration: 500, onComplete: () => f.beam.destroy() });
     const gem = this.boss.gemPoint({ x: 0, y: 0 });
 
+    const hpBefore = this.boss.brain.hp;
     if (!f.full) {
       // Too early: it wounds him, but the fight goes on and the moment will come again.
       this.boss.finisherResult(false);
+      const wound = hpBefore - this.boss.brain.hp;
+      this.bossDamage += wound;
+      this.feedGroup(gem.x, gem.y, wound, true, false, FEEL.stream.critMotes * 2);
       this.hud.setBossHp(this.boss.brain.hpPct);
       this.timeCtl.slowMo(1, 0);
       fx.critFlash();
@@ -572,6 +619,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     // Full: time stops for a beat in a white flash, then he breaks into light.
     this.won = true;
     this.boss.finisherResult(true);
+    // The whole group's arrow: its blow pours into the group bar as a river of gold.
+    this.bossDamage += hpBefore;
+    this.feedGroup(gem.x, gem.y, hpBefore, true, true, 24);
     this.hud.setBossHp(0);
     this.timeCtl.hitStop(F.freezeMs);
     fx.flashTo(F.flash.alpha, F.flash.ms);
@@ -594,7 +644,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.atmosphere.flood(F.floodMs);
       this.boss.healWall(F.floodMs);
       this.hud.hideBossBar();
-      this.hud.setCombo(0);
+      this.hud.clearCombo();
       const cam = this.cameras.main;
       cam.zoomTo(1, 1200, 'Sine.easeInOut');
       cam.pan(DESIGN_W / 2, DESIGN_H / 2, 1200, 'Sine.easeInOut');
@@ -604,7 +654,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       audio.play('victory');
     });
     this.time.delayedCall(F.freezeMs + F.panelAtMs, () => {
-      this.hud.showVictory({ kills: this.kills, bestCombo: this.bestCombo, damage: this.bossDamage, team: DEMO_TEAM.name });
+      this.hud.showVictory({ kills: this.kills, bestCombo: this.bestCombo, damage: this.bossDamage });
     });
   }
 
@@ -654,7 +704,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   // ---------------------------------------------------------------- hero damage
 
   private damageHero(): void {
-    if (this.defeated || this.won || this.hero.invulnerable || this.finisher || this.flight) return;
+    if (this.defeated || this.won || this.hero.invulnerable || this.finisher || this.flight || this.rescuing) return;
     const { audio, haptics } = services;
     this.hero.hurt();
     this.fx.shake('hurt');
@@ -663,7 +713,90 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.hearts--;
     this.hud.setHearts(this.hearts);
     this.setCombo(0);
-    if (this.hearts <= 0) this.lose();
+    if (this.hearts <= 0 && !this.startRescue()) this.lose();
+  }
+
+  // ---------------------------------------------------------------- یاری هم‌رزم (rescue)
+
+  /** The first time the last heart goes: a teammate's spirit comes to revive the hero. */
+  private startRescue(): boolean {
+    if (!FEEL.rescue.enabled || this.rescueUsed) return false;
+    const pos = this.toScreen(this.hero.x, this.hero.y - 60);
+    if (!this.hud.startRescue(pos, () => this.revive(), () => this.rescueDone())) return false;
+    this.rescueUsed = true;
+    this.rescuing = true;
+    this.aim.cancel();
+    this.aim.enabled = false;
+    services.audio.stopDraw();
+    services.audio.stopHum();
+    this.timeCtl.slowMo(FEEL.rescue.slowMo, 1e9);
+    this.atmosphere.desaturate(0.55, 400);
+    return true;
+  }
+
+  private revive(): void {
+    const R = BALANCE.rescue;
+    const fx = this.fx;
+    const x = this.hero.x;
+    const y = this.hero.y - 120;
+    this.hearts = R.hearts;
+    this.hud.setHearts(this.hearts);
+    this.hero.revive(R.shieldMs);
+    this.timeCtl.slowMo(1, 0);
+    this.atmosphere.desaturate(0, 600);
+    this.atmosphere.shockwave(1, 700);
+    fx.flashTo(0.3, 400);
+    fx.ring(x, y, 0xffd24a, 0.4, 9, 800);
+    fx.ring(x, y, 0xffffff, 0.3, 6, 600);
+    fx.sparkles(x, y);
+    fx.coinBurst(x, y, 6);
+    this.waves.clearNear(this.hero.x, this.hero.y, R.clearRadius, FEEL.rescue.shockPxPerMs);
+    this.cameras.main.shake(300, 0.006, true);
+    services.audio.play('shockwave', 0.8);
+    services.haptics.play('heavy');
+  }
+
+  private rescueDone(): void {
+    this.rescuing = false;
+    const st = this.boss.brain.state;
+    this.aim.enabled = !this.defeated && !this.won && !this.finisher && !this.flight && st !== 'intro' && st !== 'finisher';
+  }
+
+  // ---------------------------------------------------------------- team moments
+
+  /**
+   * When teammate moments may interrupt (HUD toasts): never in the golden window or at full draw
+   * (a pulse may open any moment), cutscenes, the finisher, the rescue or the volley; only after a
+   * wait while aiming or with enemies close to the hero; otherwise now.
+   */
+  teamGate(): TeamGate {
+    if (this.defeated || this.won || this.finisher || this.flight || this.rescuing || this.volley.active) return 'blocked';
+    const st = this.boss.brain.state;
+    if (st === 'intro' || st === 'finisher') return 'blocked';
+    const a = this.aim;
+    if (a.charging && (a.state.phase === 'golden' || a.state.charge >= 1)) return 'blocked';
+    if (a.charging) return 'busy';
+    for (const e of this.waves.enemies) if (e.alive && e.y > ARENA.attackY - 260) return 'busy';
+    return 'calm';
+  }
+
+  /** Surprise: the teammates' volley answers a crowded arena (see FEEL.volley). */
+  private maybeVolley(dt: number): void {
+    const V = FEEL.volley;
+    if (!V.enabled || this.volleyCount >= V.maxPerRun || this.volley.active) return;
+    if (this.volleyCooldown > 0) this.volleyCooldown -= dt;
+    if (this.runMs < V.firstAfterMs || this.volleyCooldown > 0 || this.teamGate() === 'blocked') return;
+    let near = 0;
+    let closing = false;
+    for (const e of this.waves.enemies) {
+      if (!e.alive) continue;
+      if (e.y > V.dangerY) near++;
+      if (e.y > V.lastHeartY) closing = true;
+    }
+    if (near < V.dangerCount && !(this.hearts === 1 && closing)) return;
+    if (!this.volley.start(this.hud.volleyArchers())) return;
+    this.volleyCount++;
+    this.volleyCooldown = V.cooldownMs;
   }
 
   private lose(): void {
