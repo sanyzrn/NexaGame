@@ -1,22 +1,30 @@
 {
-  "name": "nexagame",
-  "version": "0.1.0",
+  "name": "darafsh",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite",
+    "dev:lan": "vite --host",
+    "build": "npm run assets && tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "assets": "tsx scripts/pack-assets.ts",
+    "anchors": "tsx scripts/suggest-anchors.ts",
+    "tunnel": "cloudflared tunnel --url http://localhost:5173",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
-    "preview": "vite preview"
+    "test": "vitest run"
   },
   "dependencies": {
-    "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "phaser": "^3.90.0"
   },
   "devDependencies": {
-    "@types/react": "19.1.0",
-    "@types/react-dom": "19.1.0",
-    "typescript": "5.8.3",
-    "vite": "6.3.5"
+    "@types/node": "^24.13.6",
+    "free-tex-packer-core": "^0.3.9",
+    "sharp": "^0.35.4",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vazirmatn": "^33.0.3",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   }
 }
