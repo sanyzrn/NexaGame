@@ -109,9 +109,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected='<title>NexaGame | NexaFly</title>'
+          expected='<title>درفش — نبرد پهلوانان</title>'
           if ! grep -Fq "$expected" dist/index.html; then
-            echo '::error::Built HTML does not contain the expected NexaFly title.'
+            echo '::error::Built HTML does not contain the expected game title.'
             exit 1
           fi
           port="${FTP_PORT:-21}"
@@ -127,7 +127,7 @@ jobs:
             echo '❌ The FTP directory does not contain the new HTML after upload.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo 'FTPS remote index.html matches the built NexaFly file byte-for-byte.'
+          echo 'FTPS remote index.html matches the built file byte-for-byte.'
           echo 'Checking the public website with a unique cache-busting query...'
           fresh="$(curl --silent --show-error --fail --location --retry 3 \
             --connect-timeout 12 --max-time 35 \
@@ -138,7 +138,7 @@ jobs:
             echo '❌ FTP file is current, but public HTTPS content is stale (cache/proxy/rewrite).' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo 'Unique cache-busted URL serves NexaFly.'
+          echo 'Unique cache-busted URL serves the current build.'
           echo 'Checking the normal Telegram Mini App URL...'
           normal="$(curl --silent --show-error --fail --location --retry 3 \
             --connect-timeout 12 --max-time 35 \
@@ -149,4 +149,4 @@ jobs:
             echo '❌ The standard game URL is serving an old cached HTML page.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo '✅ FTPS remote file and both public HTTPS URLs serve the new NexaFly version.' >> "$GITHUB_STEP_SUMMARY"
+          echo '✅ FTPS remote file and both public HTTPS URLs serve the new version.' >> "$GITHUB_STEP_SUMMARY"
