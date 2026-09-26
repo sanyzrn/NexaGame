@@ -8,7 +8,10 @@ export type SfxName =
   | 'bang' | 'drum' | 'slam' | 'shockwave' | 'barrierUp' | 'barrierChip' | 'barrierBreak' | 'stun'
   | 'summon' | 'bossHit' | 'heartbeat' | 'arrowLaunch' | 'shatter' | 'victory' | 'screech' | 'featherChime'
   | 'toast' | 'teamHit' | 'chainUp' | 'chainDown' | 'comboBreak' | 'heartFill' | 'rescue' | 'horn' | 'volley'
-  | 'pause' | 'tick' | 'stamp' | 'whoosh' | 'bubble' | 'newBest' | 'dusk' | 'battle';
+  | 'pause' | 'tick' | 'stamp' | 'whoosh' | 'bubble' | 'newBest' | 'dusk' | 'battle'
+  // M6: the ascension
+  | 'sling' | 'lob' | 'rockSmash' | 'boom' | 'fuse' | 'ghost' | 'boulder' | 'boulderSmash'
+  | 'omen' | 'triple' | 'fireHit' | 'pip' | 'comboWord' | 'intercept' | 'potShatter' | 'stagger';
 
 /**
  * Procedural SFX with Web Audio — no audio files to download.
@@ -482,6 +485,91 @@ export class Audio {
         this.tone(t, 'sine', 95, 38, 0.55, 0.9);
         this.noiseBurst(t, 0.09, 'lowpass', 900, 200, 0.35, 0.7);
         for (const [d, f] of [[0.05, 196], [0.3, 262], [0.55, 392]]) this.tone(t + d, 'sawtooth', f, f, 0.35, 0.07);
+        break;
+      case 'sling':
+        // The sling whirling overhead: a rising flutter, faster and faster.
+        for (let i = 0; i < 5; i++) this.tone(t + i * 0.11, 'triangle', 300 + i * 60, 340 + i * 60, 0.09, 0.045);
+        break;
+      case 'lob':
+        // The stone leaves the sling: a short whipcrack of air.
+        this.noiseBurst(t, 0.16, 'bandpass', 1400, 500, 0.3 * intensity, 1.6);
+        this.tone(t, 'sine', 480, 220, 0.12, 0.05);
+        break;
+      case 'rockSmash':
+        this.noiseBurst(t, 0.22, 'lowpass', 2200, 300, 0.4, 0.8);
+        this.tone(t, 'sine', 220, 90, 0.15, 0.2);
+        break;
+      case 'boom':
+        // The bomber's cauldron: a deep thump, a hot wash, then ringing ears.
+        this.tone(t, 'sine', 120, 32, 0.8, 0.9);
+        this.noiseBurst(t, 0.6, 'lowpass', 3000, 200, 0.5, 0.5);
+        this.noiseBurst(t + 0.05, 0.9, 'bandpass', 1200, 400, 0.2, 0.8);
+        this.tone(t + 0.12, 'sine', 1567, 1567, 0.5, 0.02);
+        break;
+      case 'fuse':
+        // A lit fuse: a thin hiss.
+        this.noiseBurst(t, 0.5, 'highpass', 5000, 8000, 0.1 * intensity, 0.7);
+        break;
+      case 'ghost':
+        // The wraith slipping out of the world: a cold reversed sigh.
+        this.tone(t, 'sine', 660, 990, 0.5, 0.04);
+        this.noiseBurst(t, 0.55, 'bandpass', 800, 2400, 0.12, 2.2);
+        break;
+      case 'boulder':
+        // Stone torn out of the wall.
+        this.noiseBurst(t, 0.35, 'lowpass', 900, 300, 0.5 * intensity, 0.6);
+        this.tone(t, 'sine', 90, 40, 0.4, 0.55 * intensity);
+        this.noiseBurst(t + 0.12, 0.3, 'bandpass', 600, 200, 0.25, 1);
+        break;
+      case 'boulderSmash':
+        this.tone(t, 'sine', 80, 26, 1, 1);
+        this.noiseBurst(t, 0.8, 'lowpass', 2400, 150, 0.7, 0.5);
+        this.noiseBurst(t + 0.05, 0.5, 'bandpass', 700, 250, 0.4, 0.8);
+        break;
+      case 'omen':
+        // The day's omen: a santur-like cascade, slightly mysterious.
+        for (const [d, f] of [[0, 587], [0.09, 698], [0.18, 880], [0.3, 1046], [0.42, 880]]) {
+          this.tone(t + d, 'triangle', f, f, 0.5, 0.06);
+          this.tone(t + d, 'sine', f * 2.01, f * 2, 0.4, 0.02);
+        }
+        break;
+      case 'triple':
+        // Three quick nocked releases, climbing.
+        for (let i = 0; i < 3; i++) this.tone(t + i * 0.05, 'triangle', 500 + i * 140, 500 + i * 140, 0.08, 0.06);
+        this.noiseBurst(t, 0.2, 'bandpass', 1600, 900, 0.18 * intensity, 1.4);
+        break;
+      case 'fireHit':
+        // An arrow catching fire: a whoosh and a sizzle.
+        this.noiseBurst(t, 0.4, 'bandpass', 900, 3200, 0.3, 1.1);
+        this.tone(t, 'sawtooth', 180, 320, 0.25, 0.03);
+        break;
+      case 'pip':
+        // A little find: coins into the purse.
+        this.tone(t, 'triangle', 1174, 1174, 0.12, 0.07);
+        this.tone(t + 0.06, 'triangle', 1568, 1568, 0.16, 0.06);
+        break;
+      case 'comboWord':
+        // A calligraphy word stamped across the sky: a deep stamp under a bright fifth.
+        this.tone(t, 'sine', 130, 55, 0.3, 0.7);
+        this.noiseBurst(t, 0.07, 'lowpass', 1800, 400, 0.4, 0.7);
+        this.tone(t + 0.05, 'sawtooth', 392 * intensity, 392 * intensity, 0.4, 0.07);
+        this.tone(t + 0.05, 'triangle', 587 * intensity, 587 * intensity, 0.45, 0.09);
+        break;
+      case 'intercept':
+        // Shot out of the air: a crack and a bright chime.
+        this.noiseBurst(t, 0.14, 'highpass', 2000, 6000, 0.3, 0.8);
+        this.tone(t, 'sine', 2093, 2093, 0.35, 0.08);
+        this.tone(t + 0.07, 'sine', 2637, 2637, 0.3, 0.05);
+        break;
+      case 'potShatter':
+        // Clay giving up its secret.
+        for (let i = 0; i < 5; i++) this.tone(t + i * 0.02, 'square', 1400 - i * 160, 700, 0.07, 0.035);
+        this.noiseBurst(t, 0.25, 'bandpass', 1800, 600, 0.3, 0.9);
+        break;
+      case 'stagger':
+        // The bow thrown off (a rock landed close): a jarring rattle.
+        this.noiseBurst(t, 0.3, 'lowpass', 1200, 250, 0.45, 0.7);
+        this.tone(t, 'sawtooth', 160, 90, 0.22, 0.08);
         break;
     }
   }

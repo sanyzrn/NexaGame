@@ -15,7 +15,7 @@ import { bump, easeInExpo, easeInOutSine, easeOutBack, easeOutCubic, Spring } fr
 import { Signal } from '../utils/Signal';
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Action = 'none' | 'roar' | 'summon' | 'stumble' | 'shakeOff';
+type Action = 'none' | 'roar' | 'summon' | 'stumble' | 'shakeOff' | 'hurl';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -61,6 +61,8 @@ export class Boss {
   readonly onIntroDone = new Signal();
   readonly onSummonStart = new Signal();
   readonly onSummon = new Signal<number>();
+  /** سنگ‌باران: he rips a chunk of wall and hurls it (GameScene launches the boulder). */
+  readonly onBoulder = new Signal<{ x: number; y: number; fury: boolean }>();
   readonly onBarrier = new Signal<{ kind: 'form' | 'chip' | 'break'; x: number; y: number }>();
   readonly onStun = new Signal<boolean>();
   readonly onStumble = new Signal<BossPoint>();
@@ -371,7 +373,7 @@ export class Boss {
       .setRotation(I.tiltDeg * DEG * Math.sin((this.t / (I.bobMs * 1.9)) * TAU) + this.tilt.x + act.rot + (stunned ? wobble * 0.004 : 0));
     if (this.flashLeft > 0) b.setTint(0xffffff, true);
     else if (this.silhouette > 0) b.setTint(mixTint(0xffffff, FEEL.title.silhouetteTint, this.silhouette));
-    else b.setTint(brain.lowHp ? 0xffe2d8 : 0xffffff);
+    else b.setTint(brain.fury ? B.fury.tint : 0xffffff);
     b.update(dt);
 
     this.updateGlows(breath, act.energy);
@@ -379,7 +381,7 @@ export class Boss {
     this.updateBarrier(dt);
     this.updateStars(stunned);
     this.updateShine(dt, pose === BOSS.poses.idle && brain.state !== 'hidden');
-    if (brain.lowHp && brain.fighting && Math.random() < (B.lowHp.embersPerSec * dt) / 1000) {
+    if (brain.lowHp && brain.fighting && Math.random() < ((brain.fury ? B.fury.embersPerSec : B.lowHp.embersPerSec) * dt) / 1000) {
       const pt = BOSS.armor[Math.floor(Math.random() * BOSS.armor.length)];
       b.worldPoint(pt.x, pt.y, this.p);
       this.embers.emitParticleAt(this.p.x, this.p.y, services.settings.count(1));
@@ -476,6 +478,9 @@ export class Boss {
           this.onSummonStart.emit();
         }
         break;
+      case 'boulder':
+        if (this.action === 'none' || this.action === 'roar') this.startAction('hurl', B.hurl.ms);
+        break;
       case 'finisher':
         this.dropBarrier(false);
         this.action = 'none';
@@ -563,6 +568,23 @@ export class Boss {
         const S = B.stun;
         o.sway = S.shakeOffPx * Math.sin(k * Math.PI * 6) * (1 - k);
         o.rot = 0.02 * Math.sin(k * Math.PI * 6) * (1 - k);
+        break;
+      }
+      case 'hurl': {
+        const H = B.hurl;
+        // Lean back (winding up), then a violent sweep forward as the rock leaves his hand.
+        const wind = k < 0.55 ? easeOutCubic(k / 0.55) : 1 - easeInExpo((k - 0.55) / 0.45);
+        const sweep = k < 0.55 ? 0 : easeInExpo((k - 0.55) / 0.45);
+        o.shift = -H.leanPx * wind + H.sweepPx * sweep;
+        o.rot = -0.03 * wind + 0.05 * sweep;
+        o.stretch = 0.02 * wind - 0.03 * sweep;
+        if (t >= H.atMs && !(this.actionFlags & 1)) {
+          this.actionFlags |= 1;
+          this.lift.x = 10;
+          this.knuckleCracks(0.5);
+          this.body.worldPoint(0, 0, this.p);
+          this.onBoulder.emit({ x: this.p.x, y: this.p.y + 10, fury: this.brain.fury });
+        }
         break;
       }
     }
@@ -704,7 +726,7 @@ export class Boss {
     const strain = this.strain;
     // Gem pulse follows the breath; flares on hits, blazes when stunned or straining.
     const pulse = Math.max(breath, this.gemFlare, strain);
-    const boost = stunned ? B.stun.gemBoost : 1;
+    const boost = stunned ? B.stun.gemBoost : this.brain.fury ? B.fury.gemBoost : 1;
     this.zonePoint('gem', this.p);
     const base = (BOSS.gemGlowR * s) / 32;
     this.gemHalo.setPosition(this.p.x, this.p.y)

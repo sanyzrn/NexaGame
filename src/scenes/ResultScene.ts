@@ -32,6 +32,10 @@ export interface ResultData {
   school: School;
   /** The Homa's shadow fell on the hero this run. */
   homa: boolean;
+  /** The day's omen (shared by the whole group), if there was one. */
+  omen: { name: string; line: string } | null;
+  /** The run's best moment («لحظهٔ برتر»), told back on the card and the share text. */
+  moment: string | null;
   /** Opened from a friend's challenge link: their name and score to beat. */
   challenge: { name: string; score: number } | null;
 }
@@ -157,6 +161,19 @@ export class ResultScene extends Phaser.Scene {
     this.subText = add(this.add.text(cx, top + 100, sub, {
       fontFamily: FONT_FAMILY, fontSize: '32px', color: '#f3dca0', rtl: true,
     }).setOrigin(0.5));
+    // لحظهٔ برتر — the run's one moment worth telling.
+    if (this.d.moment) {
+      add(gradientText(this.add.text(cx, top + 148, `لحظهٔ برتر: ${this.d.moment}`, {
+        fontFamily: FONT_FAMILY, fontSize: '27px', fontStyle: '700', rtl: true, color: '#ffd9a0',
+      }).setOrigin(0.5), ['#fff0c8', '#ffd27a', '#b07018']));
+    }
+    // فال لشکر — the day's shared omen.
+    if (this.d.omen) {
+      const chip = add(this.add.text(cx, top + 344, `فال امروز: ${this.d.omen.name}`, {
+        fontFamily: FONT_FAMILY, fontSize: '26px', fontStyle: '900', rtl: true,
+      }).setOrigin(0.5));
+      chip.setColor('#8fe8ff');
+    }
 
     // Star sockets (the stars stamp into them later).
     for (let i = 0; i < 3; i++) {
@@ -433,6 +450,8 @@ export class ResultScene extends Phaser.Scene {
       perfect: isPerfect(d.stats),
       school: d.school,
       homa: d.homa,
+      omen: d.omen,
+      moment: d.moment,
     };
     this.scene.launch('Card', { card: data, damage: d.stats.groupDamage });
   }

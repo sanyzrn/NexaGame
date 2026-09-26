@@ -7,11 +7,14 @@ import { FEEL } from '../config/feel';
 import { ARENA } from '../data/arena';
 import { HERO, PILLAR } from '../data/entities';
 import { FINISHERS } from '../data/finishers';
+import { Moments } from '../data/moments';
+import { OMENS, pickOmen, applyOmenToWave, type OmenDef } from '../data/omens';
 import { DebugOverlay } from '../debug/DebugOverlay';
 import { Boss } from '../entities/Boss';
 import { Decor } from '../entities/Decor';
 import type { Enemy, EnemyHooks, EnemyWorld } from '../entities/Enemy';
 import { Hero } from '../entities/Hero';
+import { Pot, type PotLoot } from '../entities/Pot';
 import { Atmosphere } from '../render/Atmosphere';
 import { services } from '../services';
 import { AimSystem } from '../systems/AimSystem';
@@ -19,7 +22,10 @@ import { AimView } from '../systems/AimView';
 import { ArenaCollider } from '../systems/ArenaCollider';
 import { shotFor } from '../systems/charge';
 import { FX } from '../systems/FX';
+import { Hazards } from '../systems/Hazards';
+import { Pickups } from '../systems/Pickups';
 import { ProjectileSystem, type ArrowEndEvent, type HitEvent, type Point, type Target } from '../systems/ProjectileSystem';
+import { setFireMul } from '../entities/Enemy';
 import { Simorgh } from '../systems/Simorgh';
 import { TeamFinisher } from '../systems/TeamFinisher';
 import { TimeCtl } from '../systems/TimeCtl';
@@ -128,6 +134,19 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private simorghDone = false;
   private lastShot = '-';
   private wasGolden = false;
+  // M6: omens, hazards, pots, pickups, triple, moments
+  private hazards!: Hazards;
+  private pickups!: Pickups;
+  private pots: Pot[] = [];
+  private readonly fireZones: { x: number; y: number; r: number }[] = [];
+  private omen: OmenDef | null = null;
+  private readonly moments = new Moments();
+  private tripleShots = 0;
+  private staggerLeft = 0;
+  private speedLines!: Phaser.GameObjects.Image;
+  private powerGainMul = 1;
+  private flameBowStreak: number = BALANCE.surprises.flameBow.goldenStreak;
+  private bonusScore = 0;
 
   constructor() {
     super('Game');
@@ -154,6 +173,14 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.flight = null;
     this.volleyCount = this.volleyCooldown = this.runMs = 0;
     this.rescueUsed = this.rescuing = false;
+    this.tripleShots = 0;
+    this.staggerLeft = 0;
+    this.powerGainMul = 1;
+    this.flameBowStreak = BALANCE.surprises.flameBow.goldenStreak;
+    this.bonusScore = 0;
+    setFireMul(1);
+    // The omen of the day (same for the whole group; ?omen=<id> overrides, ?omen= turns it off).
+    this.omen = pickOmen(new Date(), new URLSearchParams(window.location.search).get('omen'));
 
     this.timeCtl = new TimeCtl(this);
     // Camera moves (intro push-in, the finisher's flight) never show past the arena's edges.
@@ -225,6 +252,77 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.aim = new AimSystem(this, launch, (p) => hud.isPointerOverUi(p));
     this.aimView = new AimView(this, this.aim, this.collider, launch, () => this.allTargets());
 
+    // Pots on the floor: each hides something, rolled once per run.
+    const loot = BALANCE.pots.loot;
+    const lootRoll = (): PotLoot => {
+      const r = Math.random();
+      return r < loot.coins ? 'coins' : r < loot.coins + loot.triple ? 'triple' : 'heart';
+    };
+    this.pots = ARENA.pots.map((d) => {
+      const pot = new Pot(this, d, (p, x, y) => this.potBreak(p, x, y));
+      pot.loot = lootRoll();
+      return pot;
+    });
+
+    // Hazards (slinger stones, the Div's boulders) and pot pickups.
+    this.hazards = new Hazards(this, fx, {
+      onRockLand: (_x, _y, nearHero) => {
+        if (nearHero) this.staggerBow(900);
+      },
+      onBoulderLand: (x, y, nearHero) => this.boulderLands(x, y, nearHero),
+      onIntercept: (kind, x, y) => this.hazardIntercepted(kind, x, y),
+    }, () => ({ x: this.hero.bowX, y: this.hero.bowY }));
+    this.pickups = new Pickups(this, fx, () => ({ x: this.hero.bowX, y: this.hero.bowY }), {
+      onCoins: (x, y) => {
+        this.bonusScore += BALANCE.pots.coinsScore;
+        if (this.meter.addRaw(BALANCE.pots.coinsPower) > 0) {
+          const p = this.toScreen(x, y);
+          this.hud.powerSpark(p.x, p.y);
+        }
+        this.fx.coinBurst(x, y, 4);
+        services.audio.play('pip');
+      },
+      onHeart: (x, y) => {
+        if (this.hearts < BALANCE.hero.hearts) {
+          this.hearts++;
+          this.hud.setHearts(this.hearts);
+          services.audio.play('heartFill');
+        } else {
+          this.bonusScore += 150;
+          this.fx.coinBurst(x, y, 6);
+        }
+        void y;
+      },
+      onTriple: () => {
+        this.tripleShots = Math.min(BALANCE.triple.max, this.tripleShots + BALANCE.triple.charges);
+        this.hud.setTriple(this.tripleShots);
+        this.surprises.call('سه‌تیر!', DESIGN_W / 2, this.hero.bowY - 260, ['#fff4c0', '#ffd24a', '#c98a24'], 56);
+        services.audio.play('triple');
+        services.haptics.play('medium');
+      },
+    });
+
+    // An arrow through a brazier's flame catches fire.
+    for (const f of this.decor.flames()) this.fireZones.push({ x: f.x, y: f.y, r: ARENA.fireRadius });
+    this.projectiles.fireZones = () => this.fireZones;
+    this.projectiles.onIgnite.add(({ x, y }) => {
+      this.fx.flameLick(x, y);
+      this.fx.sparkleAt(x, y, 26);
+      services.audio.play('fireHit');
+      services.haptics.play('tick');
+    });
+
+    // Speed lines while the bow is fully drawn.
+    this.speedLines = this.add.image(DESIGN_W / 2, DESIGN_H / 2, 'fx_speedlines')
+      .setScrollFactor(0).setDepth(DEPTH.flash - 1).setBlendMode(Phaser.BlendModes.ADD)
+      .setDisplaySize(DESIGN_W + 80, DESIGN_H + 80).setAlpha(0);
+
+    // The omen's colour grade over the whole run (and the title behind it).
+    if (this.omen) {
+      const g = this.omen.grade;
+      this.atmosphere.applyOmen(vGradientTex(this, 'ui_grad_omen', g.top, g.mid, g.bottom), g.alpha, 900);
+    }
+
     this.simorgh = new Simorgh(this, this.timeCtl, {
       bow: () => launch,
       onGust: (ms) => {
@@ -275,7 +373,25 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
         audio.play('featherChime');
       } else {
         this.hero.release(e.shot.crit);
-        this.projectiles.fire(launch.x, launch.y, e.dirX, e.dirY, e.shot, { flame: this.hero.flaming });
+        const burning = this.hero.flaming;
+        if (this.tripleShots > 0) {
+          // سه‌تیر: a fan of three — the centre arrow keeps its charge, the sides are supporting fire.
+          this.tripleShots--;
+          this.hud.setTriple(this.tripleShots);
+          const a0 = Math.atan2(e.dirY, e.dirX);
+          const spread = Phaser.Math.DegToRad(BALANCE.triple.spreadDeg);
+          for (const sign of [-1, 1] as const) {
+            const a = a0 + sign * spread;
+            this.projectiles.fire(launch.x, launch.y, Math.cos(a), Math.sin(a), {
+              damage: Math.max(1, Math.round(e.shot.damage * BALANCE.triple.sideDamageMul)),
+              crit: false, speed: e.shot.speed, pierce: 0,
+            }, { flame: burning, fire: burning });
+          }
+          this.projectiles.fire(launch.x, launch.y, e.dirX, e.dirY, e.shot, { flame: burning, fire: burning });
+          audio.play('triple', 0.7);
+        } else {
+          this.projectiles.fire(launch.x, launch.y, e.dirX, e.dirY, e.shot, { flame: burning, fire: burning });
+        }
       }
       this.lastShot = `${e.shot.damage}${e.shot.crit ? ' CRIT' : ''} @${Math.round(e.charge * 100)}%`;
     });
@@ -432,8 +548,12 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   /** The run proper: the tutorial first (first play), then the waves. */
   private startRun(): void {
     this.aim.enabled = true;
+    this.applyOmen();
     // Rare: the Homa may glide over this run.
-    if (FEEL.surprises.homa.enabled && Math.random() < BALANCE.surprises.homa.chancePerRun) this.homaAt = BALANCE.surprises.homa.afterMs;
+    const homaGuaranteed = this.omen?.mods.homaGuaranteed === true;
+    if ((homaGuaranteed || (FEEL.surprises.homa.enabled && Math.random() < BALANCE.surprises.homa.chancePerRun))) {
+      this.homaAt = BALANCE.surprises.homa.afterMs;
+    }
     if (services.settings.tutorialDone) {
       this.waves.start();
       return;
@@ -450,6 +570,28 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
         this.waves.start();
       },
     });
+  }
+
+  /** The omen of the day bends the run (never breaks it). */
+  private applyOmen(): void {
+    const o = this.omen;
+    if (!o) return;
+    const m = o.mods;
+    setFireMul(m.fireMul ?? 1);
+    this.decor.fireMul = m.fireMul ?? 1;
+    this.waves.mods = {
+      speedMul: m.enemySpeedMul,
+      filter: (q) => applyOmenToWave(q, o),
+    };
+    this.world.quiet = m.quietEnemies === true;
+    this.projectiles.driftDegPerSec = m.arrowDriftDegPerSec ?? 0;
+    this.powerGainMul = m.powerGainMul ?? 1;
+    this.flameBowStreak = m.flameBowStreak ?? BALANCE.surprises.flameBow.goldenStreak;
+    if (m.chainStart) {
+      for (let i = 0; i < m.chainStart; i++) this.hud.group?.raiseChain();
+    }
+    this.hud.showToast(`فال امروز: ${o.name}`, o.line);
+    services.audio.play('omen');
   }
 
   update(_time: number, delta: number): void {
@@ -477,8 +619,23 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.tutorial?.update(realMs);
     this.powers.update(realMs);
     this.surprises.update(realMs);
-    // The golden imp sheds glitter as it runs.
-    for (const e of this.waves.enemies) if (e.golden && e.alive && Math.random() < 0.6) this.fx.sparkleAt(e.bodyX, e.bodyY, 50);
+    // The golden imp sheds glitter as it runs; elites gleam.
+    for (const e of this.waves.enemies) {
+      if (!e.alive) continue;
+      if (e.golden && Math.random() < 0.6) this.fx.sparkleAt(e.bodyX, e.bodyY, 50);
+      else if (e.elite && Math.random() < 0.25) this.fx.sparkleAt(e.bodyX, e.bodyY - e.hitR, 60);
+      if (e.burning && Math.random() < 0.5) this.fx.flameLick(e.bodyX, e.bodyY);
+    }
+    // A staggered bow (a boulder landed close) can't aim for a moment.
+    if (this.staggerLeft > 0) {
+      this.staggerLeft -= realMs;
+      if (this.staggerLeft <= 0 && this.canAim()) this.aim.enabled = true;
+    }
+    // Full draw: the world holds its breath (speed lines breathe in).
+    const fullDraw = aim.charging && aim.state.charge >= 1 && !aim.cancelling;
+    const want = fullDraw ? FEEL.speedlines.alpha * (0.8 + 0.2 * Math.sin(this.runMs / 90)) : 0;
+    const ease = Math.min(1, realMs / (fullDraw ? FEEL.speedlines.inMs : FEEL.speedlines.outMs));
+    this.speedLines.setAlpha(this.speedLines.alpha + (want - this.speedLines.alpha) * ease);
     if (this.homaAt > 0 && this.runMs >= this.homaAt && this.teamGate() !== 'blocked') {
       this.homaAt = -1;
       this.surprises.flyHoma();
@@ -497,6 +654,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.simorgh.update(dt);
     this.hero.update(realMs, aim);
     this.projectiles.update(dt);
+    this.hazards.update(dt);
+    this.pickups.update(dt);
     this.volley.update(dt);
     this.runMs += dt;
     this.maybeVolley(dt);
@@ -510,9 +669,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
   private allTargets(): readonly Target[] {
     const e = this.waves.enemies;
-    if (this.targets.length !== e.length + 2) {
+    const n = e.length + this.pots.length + this.hazards.count + 2;
+    if (this.targets.length !== n) {
       this.targets.length = 0;
-      this.targets.push(...e, this.boss.barrierTarget, this.boss.target);
+      this.targets.push(...e, ...this.pots, ...this.hazards.targets(), this.boss.barrierTarget, this.boss.target);
     }
     return this.targets;
   }
@@ -586,8 +746,37 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.aim.enabled = !this.defeated;
       services.settings.markBossIntroSeen();
     });
-    boss.onSummonStart.add(() => audio.play('summon'));
-    boss.onSummon.add((n) => this.waves.summon(n, ARENA.summonPoints));
+    boss.onSummonStart.add(() => services.audio.play('summon'));
+    boss.onSummon.add((n) => {
+      // Late phases call worse things out of the wall.
+      const st = boss.brain.state;
+      const types: readonly Enemy['type'][] = st === 'phase1'
+        ? ['imp']
+        : boss.brain.fury
+          ? ['imp', 'wraith', 'bomber']
+          : ['imp', 'imp', 'bomber'];
+      this.waves.summon(n, ARENA.summonPoints, types);
+    });
+    boss.onBoulder.add(({ x, y, fury }) => {
+      services.audio.play('boulder', fury ? 1.3 : 1);
+      services.haptics.play('heavy');
+      const count = fury ? BALANCE.boss.boulders.furyCount : 1;
+      for (let i = 0; i < count; i++) {
+        const fromX = x + (i === 0 ? -170 : 170) + Phaser.Math.Between(-30, 30);
+        const toX = this.hero.x + Phaser.Math.Between(-160, 160);
+        this.hazards.boulder(fromX, y + 60, toX, ARENA.hero.y - 40);
+      }
+    });
+    boss.onLowHp.add(() => {
+      services.audio.play('growl');
+      // خشم خاکستری — ash fury: the last quarter of his life burns hotter.
+      const F = FEEL.boss.fury;
+      this.atmosphere.applyOmen(vGradientTex(this, 'ui_grad_fury', F.grade.top, F.grade.mid, F.grade.bottom), F.grade.alpha, 800);
+      this.hud.bigTitle('خشم خاکستری');
+      services.audio.play('battle');
+      services.haptics.play('heavy');
+      this.time.delayedCall(1500, () => this.atmosphere.applyOmen(this.omen ? 'ui_grad_omen' : null, this.omen?.grade.alpha ?? 0, 900));
+    });
     boss.onBarrier.add(({ kind, x, y }) => {
       if (kind === 'form') {
         audio.play('barrierUp');
@@ -621,7 +810,6 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       fx.dustBurst(x, y + 10, 10);
       fx.shake('step');
     });
-    boss.onLowHp.add(() => audio.play('growl'));
     boss.onFinisher.add(() => this.startFinisher());
   }
 
@@ -631,6 +819,19 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     const { audio, haptics } = services;
     const fx = this.fx;
     const boss = this.boss;
+
+    // A pot breaks itself and lets the arrow fly on — nothing else to do.
+    if (e.target instanceof Pot) return;
+    // Rocks and boulders: sparks and (for the big ones) the intercept handled its own fanfare.
+    if (this.hazards.owns(e.target)) {
+      fx.hitSparks(e.x, e.y, e.crit, 0xd8d8e0);
+      if (e.outcome !== 'blocked') {
+        this.setCombo(this.combo + 1);
+        fx.shake('hit');
+        audio.play('hit');
+      }
+      return;
+    }
 
     if (e.target === boss.barrierTarget) {
       if (e.outcome === 'blocked') {
@@ -698,27 +899,37 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if (e.crit) this.gainPower('golden', e.x, e.y);
     if (e.outcome === 'kill') {
       this.gainPower('kill', e.x, e.y);
-      if (t.golden) this.goldenImpCaught(t);
     }
     this.setCombo(this.combo + 1);
+    if (e.outcome === 'kill') {
+      this.creditEnemyKill(t);
+    }
     if (e.crit) {
       fx.hitStop();
       fx.shake('crit');
       fx.critFlash();
+      this.punchCamera();
       audio.play('crit');
       haptics.play('medium');
     } else {
       fx.shake('hit');
       audio.play('hit');
     }
-    if (e.outcome === 'kill') {
-      this.kills++;
-      fx.swirl(t.bodyX, t.bodyY, FEEL.particles.deathSmoke, 30);
-      fx.sparkles(t.bodyX, t.bodyY);
-      fx.coinBurst(t.bodyX, t.bodyY, this.combo);
-      fx.shake('kill');
-      audio.play('kill');
-      haptics.play('heavy');
+  }
+
+  /** Everything a dead enemy owes its killer (shared by arrows, blasts, burns and boulders). */
+  private creditEnemyKill(t: Enemy): void {
+    this.kills++;
+    this.fx.swirl(t.bodyX, t.bodyY, FEEL.particles.deathSmoke, 30);
+    this.fx.sparkles(t.bodyX, t.bodyY);
+    this.fx.coinBurst(t.bodyX, t.bodyY, this.combo);
+    this.fx.shake('kill');
+    services.audio.play('kill');
+    services.haptics.play('heavy');
+    if (t.golden) this.goldenImpCaught(t);
+    if (t.elite) {
+      this.bonusScore += BALANCE.elite.scoreBonus;
+      this.pickups.drop(BALANCE.elite.drop, t.bodyX, t.bodyY);
     }
   }
 
@@ -739,6 +950,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.fx.absorb(e.x, e.y);
       services.audio.play('absorb');
     }
+    // One arrow, two (or more) enemies; a kill after a ricochet.
+    if (e.kills >= 2) this.moments.count('doubleKills');
+    if (e.kills >= 1 && e.bounces >= 1) this.moments.count('ricochets');
     // An arrow that hit nothing breaks the streak.
     if (e.hits === 0) this.setCombo(0);
     else if (this.surprises.trickShot(e.kills, e.bounces, e.x, e.y)) this.gainPower('trickShot', e.x, e.y);
@@ -749,6 +963,38 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.combo = n;
     this.bestCombo = Math.max(this.bestCombo, n);
     this.hud.setCombo(n);
+    // Words that land as the combo climbs: تیغ → تندر → طوفان → افسانه → درفش.
+    for (const [v, word] of FEEL.combo.words) {
+      if (n === v) {
+        this.comboWord(word, v);
+        break;
+      }
+    }
+  }
+
+  private comboWord(word: string, tier: number): void {
+    const big = tier >= 20;
+    this.surprises.call(word, 360, 580, big ? ['#fff6d8', '#ffd24a', '#c98a24'] : ['#ffe8c0', '#ff9a3a', '#c05010'], 54 + tier);
+    services.audio.play('comboWord', Math.min(1.5, 0.8 + tier / 30));
+    services.haptics.play('medium');
+    if (big) {
+      this.fx.critFlash();
+      this.timeCtl.slowMo(0.45, 420);
+      const p = this.toScreen(this.hero.bowX, this.hero.bowY);
+      this.fx.sparkles(p.x, p.y);
+    }
+  }
+
+  /** A tiny zoom punch toward the hit (skipped while the camera is busy with a cutscene). */
+  private punchCamera(): void {
+    const cam = this.cameras.main;
+    if (this.mode !== 'play' || this.boss.inIntro || this.finisher || this.flight) return;
+    const z0 = cam.zoom;
+    this.tweens.killTweensOf(cam);
+    this.tweens.add({
+      targets: cam, zoom: z0 * FEEL.punch.zoom, duration: FEEL.punch.ms, ease: 'Sine.easeOut',
+      onComplete: () => this.tweens.add({ targets: cam, zoom: z0, duration: FEEL.punch.backMs, ease: 'Sine.easeInOut' }),
+    });
   }
 
   // ---------------------------------------------------------------- the Arrow of Arash
@@ -959,6 +1205,133 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     services.audio.play('lunge');
   }
 
+  // ---------------------------------------------------------------- new enemy hooks (M6)
+
+  windup(e: Enemy): void {
+    services.audio.play('sling');
+    this.fx.sparkleAt(e.x + 30, e.y - 150, 42);
+  }
+
+  lob(e: Enemy, fromX: number, fromY: number, toX: number, toY: number): void {
+    void e;
+    this.hazards.rock(fromX, fromY, toX, toY);
+    services.audio.play('lob', 0.8);
+  }
+
+  exploded(e: Enemy, x: number, y: number): void {
+    this.bomberBoom(e, x, y);
+  }
+
+  burnTick(e: Enemy, damage: number, killed: boolean): void {
+    this.damageDealt += damage;
+    this.numbers.spawn(e.hitX, e.hitY - e.hitR - 16, damage, false);
+    this.feedGroup(e.hitX, e.hitY, damage, false, killed);
+    this.fx.flameLick(e.bodyX, e.bodyY);
+    if (killed) {
+      this.moments.count('fireKills');
+      this.creditEnemyKill(e);
+    }
+  }
+
+  /** The bomber's cauldron goes up: a green flash, and everyone nearby pays for it. */
+  private bomberBoom(e: Enemy, x: number, y: number): void {
+    const B = BALANCE.enemies.bomber.boom;
+    const fx = this.fx;
+    const mul = this.omen?.mods.fireMul ?? 1;
+    const radius = B.radius * (1 + (mul - 1) * 0.25);
+    services.audio.play('boom');
+    services.haptics.play('heavy');
+    fx.flashTo(FEEL.fire.boom.flash, 300);
+    fx.shake('boom');
+    fx.ring(x, y, 0x8aff4a, FEEL.fire.boom.ringFrom, FEEL.fire.boom.ringTo, FEEL.fire.boom.ringMs);
+    fx.ring(x, y, 0xffe08a, 0.3, FEEL.fire.boom.ringTo * 0.7, FEEL.fire.boom.ringMs * 1.2);
+    fx.dustBurst(x, y, 22);
+    fx.debris(x, y, 14);
+    fx.swirl(x, y, 30);
+    this.timeCtl.hitStop(90);
+    this.punchCamera();
+    // The bomber itself
+    this.kills++;
+    this.fx.coinBurst(x, y, 4);
+    if (e.elite) {
+      this.bonusScore += BALANCE.elite.scoreBonus;
+      this.pickups.drop(BALANCE.elite.drop, x, y);
+    }
+    // …and everyone caught in the blast (fire damage: shields don't care, bombers chain).
+    for (const other of this.waves.enemies) {
+      if (other === e || !other.alive || !other.hittable) continue;
+      if (Math.hypot(other.bodyX - x, other.bodyY - y) > radius) continue;
+      const outcome = other.receiveArrow({ damage: B.damage, crit: false, fire: true, x, y: other.hitY, dirX: Math.sign(other.x - x) || 1, dirY: 0, bounces: 0 });
+      if (outcome === 'hit' || outcome === 'kill') {
+        this.damageDealt += B.damage;
+        this.numbers.spawn(other.hitX, other.hitY - other.hitR - 16, B.damage, false);
+        this.feedGroup(other.hitX, other.hitY, B.damage, false, outcome === 'kill');
+      }
+      if (outcome === 'kill') {
+        this.moments.count('bombChains');
+        this.creditEnemyKill(other);
+      }
+    }
+  }
+
+  /** A boulder landed: crush what's under it, stagger the bow if it landed close. */
+  private boulderLands(x: number, y: number, nearHero: boolean): void {
+    const B = BALANCE.boss.boulders;
+    for (const e of this.waves.enemies) {
+      if (!e.alive || !e.hittable) continue;
+      if (Math.hypot(e.x - x, e.y - y) > B.crushRadius) continue;
+      if (e.crush(B.crushDamage)) {
+        this.moments.count('crushes');
+        this.damageDealt += B.crushDamage;
+        this.feedGroup(e.hitX, e.hitY, B.crushDamage, true, true);
+        this.surprises.call('له شد!', e.bodyX, e.bodyY - 120, ['#fff0d8', '#ffb070', '#c05010'], 52);
+        this.creditEnemyKill(e);
+      }
+    }
+    if (nearHero) this.staggerBow(B.heroStaggerMs);
+  }
+
+  /** A rock or boulder shot out of the air. */
+  private hazardIntercepted(kind: 'rock' | 'boulder', x: number, y: number): void {
+    const fx = this.fx;
+    fx.hitSparks(x, y, true, 0xd8d8e0);
+    fx.debris(x, y, kind === 'boulder' ? 16 : 6);
+    fx.sparkles(x, y);
+    services.audio.play('intercept');
+    services.haptics.play('medium');
+    this.moments.count('intercepts');
+    this.moments.log.boulders += kind === 'boulder' ? 1 : 0;
+    if (kind === 'boulder') {
+      fx.hitStop();
+      fx.shake('crit');
+      fx.critFlash();
+      this.surprises.call('سنگ را شکست!', x, y - 100, ['#fff6d8', '#ffd24a', '#c98a24'], 54);
+      this.gainPower('trickShot', x, y);
+    } else {
+      this.gainPower('trickShot', x, y);
+    }
+  }
+
+  /** A pot gives up its secret. */
+  private potBreak(pot: Pot, x: number, y: number): void {
+    this.fx.dustBurst(x, y, FEEL.pots.shards);
+    this.fx.debris(x, y, Math.round(FEEL.pots.shards * 0.7));
+    services.audio.play('potShatter');
+    this.pickups.drop(pot.loot, x, y);
+  }
+
+  /** The bow is thrown off (a rock or boulder landed close): no aiming for a beat, never a heart. */
+  private staggerBow(ms: number): void {
+    if (this.defeated || this.won) return;
+    this.staggerLeft = Math.max(this.staggerLeft, ms);
+    this.aim.cancel();
+    this.aim.enabled = false;
+    this.hero.hurt();
+    this.fx.shake('hurt');
+    services.audio.play('stagger');
+    services.haptics.play('heavy');
+  }
+
   reachedHero(): void {
     this.fx.swirl(this.world.heroX, this.world.heroY, FEEL.particles.lungeSmoke, 50);
     this.damageHero();
@@ -1073,7 +1446,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
   private gainPower(kind: 'golden' | 'kill' | 'trickShot', x: number, y: number): void {
     if (!this.powerAvailable) return;
-    if (this.meter.add(kind) <= 0) return;
+    const gained = this.meter.add(kind);
+    if (gained <= 0) return;
+    // The omen of the day may make every gain worth more.
+    if (this.powerGainMul !== 1) this.meter.addRaw(gained * (this.powerGainMul - 1));
     const p = this.toScreen(x, y);
     this.hud.powerSpark(p.x, p.y);
   }
@@ -1101,8 +1477,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       return;
     }
     this.goldenStreak++;
+    this.moments.streak(this.goldenStreak);
     const F = BALANCE.surprises.flameBow;
-    if (FEEL.surprises.flameBow.enabled && this.goldenStreak >= F.goldenStreak && !this.hero.flaming) {
+    const need = this.flameBowStreak;
+    if (FEEL.surprises.flameBow.enabled && this.goldenStreak >= need && !this.hero.flaming) {
       this.goldenStreak = 0;
       this.hero.flameBow(F.ms);
       this.surprises.flameBow();
@@ -1221,6 +1599,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       reachedBoss: this.reachedBoss,
     });
     let isNewBest = false;
+    // The run's little bonuses (pots, elites) and the omen's score multiplier.
+    if (this.bonusScore > 0) stats.score += this.bonusScore;
+    const scoreMul = this.omen?.mods.scoreMul ?? 1;
+    if (scoreMul !== 1) stats.score = Math.round(stats.score * scoreMul);
     try {
       const res = await services.game.submitRun({
         score: stats.score, bestCombo: stats.bestCombo, crits: stats.goldenShots, shots: stats.shots, kills: stats.kills,
@@ -1242,6 +1624,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       epicLine: epicLineFor(stats),
       school: services.settings.school,
       homa: this.homaBlessed,
+      omen: this.omen ? { name: this.omen.name, line: this.omen.line } : null,
+      moment: this.moments.bestMoment(),
       challenge: (() => {
         const p = readStartParam(services.telegram.startParam);
         return p?.kind === 'challenge' ? { name: p.name, score: p.score } : null;
@@ -1272,8 +1656,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
           `BOSS ${b.state.toUpperCase()}  hp ${b.hp}/${b.maxHp} (${(b.hpPct * 100).toFixed(0)}%)` +
           `${b.stunLeft > 0 ? `  stun ${(b.stunLeft / 1000).toFixed(1)}s` : ''}${b.retryLeft > 0 ? `  retry ${(b.retryLeft / 1000).toFixed(1)}s` : ''}\n` +
           `particles: ${this.fx.aliveCount} alive / ${this.fx.budget} budget  effects: ${services.settings.reducedEffects ? 'light' : 'full'}\n` +
-          `power ${(this.meter.value * 100).toFixed(0)}% (${services.settings.school})  streak ${this.goldenStreak}\n` +
-          'H: hurt  B: boss now  N: boss -15%  P: power full  G: golden imp  J: Homa  K: flame bow';
+          `power ${(this.meter.value * 100).toFixed(0)}% (${services.settings.school})  streak ${this.goldenStreak}  triple ${this.tripleShots}  omen ${this.omen?.name ?? '—'}\n` +
+          'H: hurt  B: boss now  N: boss -15%  P: power full  G: golden imp  J: Homa  K: flame bow\n' +
+          'O: next omen  T: سه‌تیر  U/V/Y: slinger/bomber/wraith  X: boulder';
       },
     });
     this.debug.onToggle = (on) => setPlaceholderLabels(this, Art.missing, on);
@@ -1308,6 +1693,38 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       if (!this.debug.enabled || !this.boss.brain.fighting) return;
       this.boss.brain.hit({ damage: Math.round(this.boss.brain.maxHp * 0.15), crit: true, gem: false });
       this.hud.setBossHp(this.boss.brain.hpPct);
+    });
+    // M6 debug: cycle the omen, grant سه‌تیر, summon the new types, drop a boulder.
+    kb?.on('keydown-O', () => {
+      if (!this.debug.enabled) return;
+      const idx = this.omen ? OMENS.findIndex((o) => o.id === this.omen!.id) : -1;
+      this.omen = OMENS[(idx + 1) % OMENS.length];
+      this.applyOmen();
+      if (this.omen) {
+        const g = this.omen.grade;
+        this.atmosphere.applyOmen(vGradientTex(this, 'ui_grad_omen', g.top, g.mid, g.bottom), g.alpha, 500);
+      }
+    });
+    kb?.on('keydown-T', () => {
+      if (!this.debug.enabled) return;
+      this.tripleShots = Math.min(BALANCE.triple.max, this.tripleShots + BALANCE.triple.charges);
+      this.hud.setTriple(this.tripleShots);
+    });
+    kb?.on('keydown-V', () => {
+      if (!this.debug.enabled) return;
+      this.waves.spawnOne('bomber', Phaser.Math.Between(ARENA.walls.left + 200, ARENA.walls.right - 200));
+    });
+    kb?.on('keydown-Y', () => {
+      if (!this.debug.enabled) return;
+      this.waves.spawnOne('wraith', Phaser.Math.Between(ARENA.walls.left + 200, ARENA.walls.right - 200));
+    });
+    kb?.on('keydown-U', () => {
+      if (!this.debug.enabled) return;
+      this.waves.spawnOne('slinger', Phaser.Math.Between(ARENA.walls.left + 200, ARENA.walls.right - 200));
+    });
+    kb?.on('keydown-X', () => {
+      if (!this.debug.enabled) return;
+      this.hazards.boulder(DESIGN_W / 2 - 170, 360, this.hero.x + Phaser.Math.Between(-120, 120), ARENA.hero.y - 40);
     });
     // Three fingers toggle the debug overlay; don't let them start a shot.
     this.input.on(Phaser.Input.Events.POINTER_DOWN, () => {

@@ -6,7 +6,7 @@ import { BALANCE } from '../config/balance';
  */
 export type BossState = 'hidden' | 'intro' | 'phase1' | 'armor' | 'stunned' | 'finisher' | 'dead';
 
-export type BossEvent = 'armor' | 'stun' | 'recover' | 'lowHp' | 'summon' | 'finisher' | 'dead';
+export type BossEvent = 'armor' | 'stun' | 'recover' | 'lowHp' | 'summon' | 'boulder' | 'finisher' | 'dead';
 
 export interface BossHit {
   damage: number;
@@ -43,6 +43,10 @@ export class BossBrain {
   /** >0 after an early finisher release: counts down to offering it again. */
   retryLeft = 0;
   readonly events: BossEvent[] = [];
+  /** Index into cfg.boulders.at (scripted barrages by hp threshold). */
+  private boulderIdx = 0;
+  /** Time to the next repeating barrage (armour / ash fury). */
+  private boulderLeft = 0;
 
   constructor(private readonly cfg: BossTuning = BALANCE.boss, private readonly fin: FinisherTuning) {
     this.maxHp = this.hp = cfg.hp;
@@ -61,6 +65,11 @@ export class BossBrain {
   /** The barrier is up. */
   get armored(): boolean {
     return this.state === 'armor';
+  }
+
+  /** خشم خاکستری: latched under lowHpPct — hotter, faster, meaner. */
+  get fury(): boolean {
+    return this.lowHp;
   }
 
   startIntro(): void {
@@ -115,7 +124,14 @@ export class BossBrain {
       this.summonLeft -= dt;
       if (this.summonLeft <= 0) {
         this.summonLeft = this.state === 'phase1' ? this.cfg.summon.phase1EveryMs : this.cfg.summon.armorEveryMs;
+        if (this.fury) this.summonLeft *= this.cfg.fury.summonEveryMul;
         this.events.push('summon');
+      }
+      // سنگ‌باران: while armoured or in ash fury, a repeating barrage (never while stunned).
+      this.boulderLeft -= dt;
+      if (this.boulderLeft <= 0) {
+        this.boulderLeft = this.fury ? this.cfg.boulders.furyEveryMs : this.cfg.boulders.armorEveryMs;
+        this.events.push('boulder');
       }
     }
     if (this.retryLeft > 0 && this.fighting) {
@@ -143,6 +159,12 @@ export class BossBrain {
     const before = this.hp;
     const floor = this.retryLeft > 0 ? 1 : Math.round(this.maxHp * this.fin.triggerPct);
     this.hp = Math.max(floor, this.hp - damage);
+    // Scripted boulder barrages at hp thresholds (each fires once, high → low).
+    const at = this.cfg.boulders.at;
+    while (this.boulderIdx < at.length && this.hpPct <= at[this.boulderIdx]) {
+      this.boulderIdx++;
+      this.events.push('boulder');
+    }
     if (!this.lowHp && this.hpPct <= this.cfg.lowHpPct) {
       this.lowHp = true;
       this.events.push('lowHp');
@@ -153,8 +175,12 @@ export class BossBrain {
     }
     if (this.state === 'phase1' && this.hpPct <= this.cfg.armorAtPct) {
       this.state = 'armor';
+      this.boulderLeft = this.cfg.boulders.armorEveryMs;
       this.events.push('armor');
     }
+    // خشم خاکستری: once fury latches, the next barrage never waits longer than the fury cadence
+    // (checked last so a same-hit armor transition can't overwrite it).
+    if (this.lowHp) this.boulderLeft = Math.min(this.boulderLeft, this.cfg.boulders.furyEveryMs);
   }
 
   private enterFinisher(): void {

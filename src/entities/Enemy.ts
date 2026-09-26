@@ -22,12 +22,24 @@ export interface EnemyHooks {
   reachedHero(e: Enemy): void;
   /** Left the arena without dying (a fleeing imp, the golden imp running off). */
   escaped?(e: Enemy): void;
+  /** A slinger winds up its throw (telegraph sfx/sparks). */
+  windup?(e: Enemy): void;
+  /** A slinger's stone leaves the sling, aimed at the hero's bow. */
+  lob?(e: Enemy, fromX: number, fromY: number, toX: number, toY: number): void;
+  /** A bomber's fuse burned out: blast at its position. */
+  exploded?(e: Enemy, x: number, y: number): void;
+  /** A burn tick dealt damage (killed = it was lethal). */
+  burnTick?(e: Enemy, damage: number, killed: boolean): void;
 }
 
 /** Special kinds of life (surprises). */
 export interface SpawnOptions {
   /** The rare golden imp: dashes sideways across the arena at `y`, never toward the hero. */
   golden?: boolean;
+  /** A gold-trimmed veteran: more hp, a little faster, guaranteed drop. */
+  elite?: boolean;
+  /** Walk-speed multiplier (the omen of the day). */
+  speedMul?: number;
 }
 
 /** What enemies read from the world every frame (filled in place, never reallocated). */
@@ -41,6 +53,14 @@ export interface EnemyWorld {
   aimY: number;
   aimDX: number;
   aimDY: number;
+  /** The omen of the day: no taunts, bangs or scratches. */
+  quiet?: boolean;
+}
+
+/** The omen of the day can make fire burn hotter (set by GameScene at run start). */
+let FIRE_MUL = 1;
+export function setFireMul(mul: number): void {
+  FIRE_MUL = mul;
 }
 
 const enum State { Off, Spawning, Walking, Lunging, Dying }
@@ -153,6 +173,21 @@ export class Enemy implements Target {
   private pushV = 0;
   private slowLeft = 0;
   private slowMul = 1;
+  // M6: elites, fire, and the three new types
+  /** Gold-trimmed veteran (hp×, scale×, guaranteed drop). */
+  elite = false;
+  private burnLeft = 0;
+  private burnTickT = 0;
+  // slinger
+  private stopY = 0;
+  private throwT = 0;
+  private coolT = 0;
+  // bomber
+  /** >0: the fuse is burning (ms left). */
+  fuseLeft = 0;
+  // wraith
+  private phase: 'solid' | 'ghost' = 'solid';
+  private phaseLeft = 0;
 
   constructor(scene: Phaser.Scene, private readonly hooks: EnemyHooks) {
     this.img = Art.image(scene, 0, 0, ENEMIES.imp.poses.walk[0]).setVisible(false);
@@ -177,13 +212,19 @@ export class Enemy implements Target {
 
   get hittable(): boolean {
     const E = FEEL.enemy;
+    let ok: boolean;
     switch (this.state) {
-      case State.Walking: return true;
-      case State.Spawning: return this.t > E.spawn.delayMs + E.spawn.popMs * 0.5;
+      case State.Walking: ok = true; break;
+      case State.Spawning: ok = this.t > E.spawn.delayMs + E.spawn.popMs * 0.5; break;
       // The wind-up before the lunge is the last chance to shoot it.
-      case State.Lunging: return !this.dashing;
-      default: return false;
+      case State.Lunging: ok = !this.dashing; break;
+      default: ok = false;
     }
+    if (!ok) return false;
+    // The wraith slips out of the world while ghost; the bomber is a walking bomb while fusing.
+    if (this.type === 'wraith' && this.phase === 'ghost') return false;
+    if (this.type === 'bomber' && this.fuseLeft > 0) return false;
+    return true;
   }
   get hitX(): number {
     return this.ax + this.def.hitbox.x;
@@ -197,6 +238,11 @@ export class Enemy implements Target {
   get color(): number {
     return this.def.color;
   }
+  /** Burning from a fire arrow. */
+  get burning(): boolean {
+    return this.burnLeft > 0;
+  }
+
   /** Where smoke and effects centre on the body. */
   get bodyX(): number {
     return this.hitX;
@@ -224,14 +270,20 @@ export class Enemy implements Target {
   spawn(type: EnemyType, x: number, hpScale: number, burstFromY?: number, opts?: SpawnOptions): void {
     const E = FEEL.enemy;
     this.golden = !!opts?.golden;
+    this.elite = !!opts?.elite;
     this.fleeing = false;
     this.stunLeft = this.pushLeft = this.slowLeft = 0;
     this.type = type;
     this.def = ENEMIES[type];
     this.maxHp = this.hp = this.shownHp = this.trailHp = Math.round(BALANCE.enemies[type].hp * hpScale);
+    if (this.elite) {
+      this.maxHp = this.hp = this.shownHp = this.trailHp = Math.round(this.maxHp * BALANCE.elite.hpMul);
+    }
     this.x = x;
     this.y = ARENA.spawnY;
     this.speed = BALANCE.enemies[type].speed * (1 + (Math.random() * 2 - 1) * E.walk.speedJitter);
+    if (opts?.speedMul) this.speed *= opts.speedMul;
+    if (this.elite) this.speed *= BALANCE.elite.speedMul;
     this.stepPhase = Math.random() * 2;
     this.lastStep = Math.floor(this.stepPhase);
     this.seed = Math.random() * 1000;
@@ -240,6 +292,18 @@ export class Enemy implements Target {
     this.popMul = 0;
     this.pauseLeft = this.tumbleLeft = this.flashLeft = this.hitPoseLeft = this.squash = 0;
     this.burstLeft = 0;
+    this.burnLeft = this.burnTickT = 0;
+    this.fuseLeft = 0;
+    this.throwT = 0;
+    if (type === 'slinger') {
+      const [lo, hi] = BALANCE.enemies.slinger.stopY;
+      this.stopY = lo + Math.random() * (hi - lo);
+      this.coolT = BALANCE.enemies.slinger.firstThrowMs;
+    }
+    if (type === 'wraith') {
+      this.phase = 'solid';
+      this.phaseLeft = BALANCE.enemies.wraith.solidMs;
+    }
     if (burstFromY !== undefined) {
       this.burstLeft = FEEL.boss.summon.burstMs;
       this.burstY0 = burstFromY;
@@ -284,6 +348,7 @@ export class Enemy implements Target {
     }
 
     this.hp = Math.max(0, this.hp - hit.damage);
+    if (hit.fire) this.ignite();
     this.flashLeft = E.hitFlashMs;
     this.hitPoseLeft = E.hitPoseMs;
     this.squash = 1;
@@ -296,8 +361,44 @@ export class Enemy implements Target {
       this.tumbleDir = hit.dirX >= 0 ? 1 : -1;
     }
     if (this.hp > 0) return 'hit';
+    // The bomber doesn't die — its cauldron lights. A fire arrow lights it fast.
+    if (this.type === 'bomber' && this.fuseLeft <= 0) {
+      this.fuseLeft = hit.fire ? BALANCE.enemies.bomber.fireFuseMs : BALANCE.enemies.bomber.fuseMs;
+      this.squash = 1.4;
+      return 'hit';
+    }
     this.die(DEATHS[Math.floor(Math.random() * DEATHS.length)], hit.dirX);
     return 'kill';
+  }
+
+  /** A fire arrow sets it burning (fire pins a wraith solid while it burns). */
+  ignite(): void {
+    this.burnLeft = Math.max(this.burnLeft, BALANCE.fire.ms);
+    this.burnTickT = Math.min(this.burnTickT, BALANCE.fire.tickMs);
+    if (this.type === 'wraith') {
+      this.phase = 'solid';
+      this.phaseLeft = Math.max(this.phaseLeft, BALANCE.enemies.wraith.solidMs);
+    }
+  }
+
+  private tickBurn(dt: number): void {
+    this.burnLeft -= dt;
+    this.burnTickT -= dt;
+    if (this.burnTickT > 0) return;
+    this.burnTickT = BALANCE.fire.tickMs;
+    const dmg = Math.max(1, Math.round((FIRE_MUL * BALANCE.fire.dps * BALANCE.fire.tickMs) / 1000));
+    this.hp = Math.max(0, this.hp - dmg);
+    let killed = false;
+    if (this.hp <= 0) {
+      if (this.type === 'bomber' && this.fuseLeft <= 0) {
+        // Already burning: the blast comes almost at once.
+        this.fuseLeft = Math.min(this.fuseLeft, BALANCE.enemies.bomber.fireFuseMs);
+      } else {
+        this.die('pop', 0);
+        killed = true;
+      }
+    }
+    this.hooks.burnTick?.(this, dmg, killed);
   }
 
   /**
@@ -319,6 +420,24 @@ export class Enemy implements Target {
     if (!this.alive) return;
     this.slowLeft = Math.max(this.slowLeft, ms);
     this.slowMul = mul;
+  }
+
+  /**
+   * Crushed by a falling boulder: no shield in the world saves you from the sky. Returns true if
+   * it died (a bomber just lights its fuse instead).
+   */
+  crush(damage: number): boolean {
+    if (!this.hittable) return false;
+    this.hp = Math.max(0, this.hp - damage);
+    this.squash = 1.5;
+    this.setBar(true);
+    if (this.hp > 0) return false;
+    if (this.type === 'bomber' && this.fuseLeft <= 0) {
+      this.fuseLeft = BALANCE.enemies.bomber.fireFuseMs;
+      return false;
+    }
+    this.die('crumble', 0);
+    return true;
   }
 
   /** Sees the carnage and runs for it (imps only, before they get close). */
@@ -348,6 +467,8 @@ export class Enemy implements Target {
     this.death = kind;
     this.deathSpin = dirX === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dirX);
     this.deathY0 = this.img.y;
+    this.fuseLeft = 0;
+    this.burnLeft = 0;
     this.setBar(false);
     this.glint.setVisible(false);
   }
@@ -380,17 +501,33 @@ export class Enemy implements Target {
         this.shadow.setVisible(true);
         break;
       }
-      case State.Walking:
+      case State.Walking: {
         if (this.pushLeft > 0) {
           this.pushLeft -= dt;
           this.y = Math.max(ARENA.spawnY, this.y - (this.pushV * dt) / 1000);
         }
         if (this.slowLeft > 0) this.slowLeft -= dt;
-        if (this.stunLeft > 0) this.stunLeft -= dt;
-        else this.walk(this.slowLeft > 0 ? dt * this.slowMul : dt, world);
-        if ((this.state as State) === State.Off) return;
-        if (this.y >= ARENA.attackY && !this.golden) this.startLunge(world);
+        if (this.stunLeft > 0) {
+          this.stunLeft -= dt;
+        } else if (this.fuseLeft > 0) {
+          // The fuse burns down; the blast is the bomber's only ending.
+          this.fuseLeft -= dt;
+          if (this.fuseLeft <= 0) {
+            this.die('pop', 0);
+            this.hooks.exploded?.(this, this.x, this.y - 60);
+            return;
+          }
+        } else {
+          if (this.burnLeft > 0) {
+            this.tickBurn(dt);
+            if (this.state !== State.Walking) return;
+          }
+          this.walk(this.slowLeft > 0 ? dt * this.slowMul : dt, world);
+        }
+        if (this.state !== State.Walking) return;
+        if (this.y >= ARENA.attackY && !this.golden && this.type !== 'slinger') this.startLunge(world);
         break;
+      }
       case State.Lunging:
         if (this.updateLunge()) return;
         break;
@@ -451,7 +588,7 @@ export class Enemy implements Target {
         }
         return;
       }
-      if (this.y < ARENA.attackY - 220 && Math.random() < I.pause.chancePerSec * s) {
+      if (!world.quiet && this.y < ARENA.attackY - 220 && Math.random() < I.pause.chancePerSec * s) {
         // Personality: either a taunting hop, or a puzzled head scratch.
         this.scratching = Math.random() < 0.5;
         this.pauseLeft = this.pauseMs = this.scratching ? I.scratch.ms : I.pause.ms;
@@ -460,6 +597,49 @@ export class Enemy implements Target {
       this.move(this.speed * s, I.stridePx);
       // Slow sideways drift.
       this.x += Math.cos((this.life / I.driftPeriodMs) * TAU + this.seed) * ((I.driftPx * TAU) / I.driftPeriodMs) * dt;
+    } else if (this.type === 'wraith') {
+      const W = BALANCE.enemies.wraith;
+      // Slipping between worlds: solid → shimmer → gone → back.
+      this.phaseLeft -= dt;
+      if (this.phase === 'solid' && this.phaseLeft <= 0) {
+        this.phase = 'ghost';
+        this.phaseLeft = W.ghostMs;
+      } else if (this.phase === 'ghost' && this.phaseLeft <= 0) {
+        this.phase = 'solid';
+        this.phaseLeft = W.solidMs;
+      }
+      // Drifts down on a slow weave, unhurried.
+      this.y += this.speed * s;
+      this.x += Math.sin((this.life / 2100) * TAU + this.seed) * 72 * s;
+      this.stepPhase += dt / 640;
+      this.x = clamp(this.x, ARENA.walls.left + 40, ARENA.walls.right - 40);
+      return;
+    } else if (this.type === 'slinger') {
+      const S = BALANCE.enemies.slinger;
+      if (this.y < this.stopY) {
+        this.move(this.speed * s, FEEL.slinger.stridePx);
+      } else {
+        // In position: wind up → lob → catch breath.
+        if (this.throwT > 0) {
+          this.throwT -= dt;
+          if (this.throwT <= 0) {
+            this.hooks.lob?.(this, this.x + 26, this.y - 128, world.heroX, world.heroY);
+            this.coolT = S.cooldownMs * (0.8 + Math.random() * 0.4);
+          }
+        } else {
+          this.coolT -= dt;
+          if (this.coolT <= 0) {
+            this.throwT = S.windupMs;
+            this.hooks.windup?.(this);
+          }
+        }
+        this.stepPhase += dt / 900;
+      }
+    } else if (this.type === 'bomber') {
+      // Heavy, lurching, in no hurry — the danger is what it carries.
+      const ph = this.stepPhase % 1;
+      const surge = 0.55 + 0.9 * Math.sin(ph * Math.PI) ** 2;
+      this.move(this.speed * surge * s, FEEL.bomber.stridePx);
     } else {
       // Shield-bearer: lurching heavy steps, fastest mid-stride.
       const S = FEEL.shield;
@@ -476,7 +656,7 @@ export class Enemy implements Target {
         this.updateRaise(dt, world);
         return;
       }
-      if (this.y < ARENA.attackY - 260 && this.raise < 0.1 && Math.random() < S.pause.chancePerSec * s) {
+      if (!world.quiet && this.y < ARENA.attackY - 260 && this.raise < 0.1 && Math.random() < S.pause.chancePerSec * s) {
         this.pauseLeft = this.pauseMs = S.pause.ms;
         this.bangs = 0;
       }
@@ -559,7 +739,9 @@ export class Enemy implements Target {
     const D = FEEL.enemy.death;
     const ms = this.death === 'crumble' ? D.crumbleMs : this.death === 'gold' ? FEEL.enemy.goldMs : D.ms;
     const k = Math.min(1, this.t / ms);
-    const base = this.def.scale;
+    const base = this.def.scale * (this.elite ? BALANCE.elite.scaleMul : 1);
+    // The kill punch: a quick extra swell on the first beat of every death.
+    const punch = Math.max(0, 1 - k / 0.22) * 0.18;
     Art.setPose(this.img, this.def.poses.hit);
     switch (this.death) {
       case 'pop': {
@@ -567,7 +749,7 @@ export class Enemy implements Target {
         if (k < 0.25) this.img.setTintFill(0xffffff);
         else this.img.setTint(0xc9a0ff);
         const p = k < 0.2 ? 1 + (D.pop - 1) * (k / 0.2) : D.pop * (1 - (k - 0.2) / 0.8);
-        this.img.setScale(base * Math.max(0.01, p)).setAlpha(1 - k * k);
+        this.img.setScale(base * Math.max(0.01, p) * (1 + punch)).setAlpha(1 - k * k);
         break;
       }
       case 'spin': {
@@ -575,7 +757,7 @@ export class Enemy implements Target {
         if (k < 0.2) this.img.setTintFill(0xffffff);
         else this.img.setTint(0xb07ae0);
         const e = k * k;
-        this.img.setRotation(this.deathSpin * D.spinTurns * TAU * e).setScale(base * (1 - 0.9 * e)).setAlpha(1 - e);
+        this.img.setRotation(this.deathSpin * D.spinTurns * TAU * e).setScale(base * (1 - 0.9 * e) * (1 + punch)).setAlpha(1 - e);
         break;
       }
       case 'crumble': {
@@ -583,7 +765,7 @@ export class Enemy implements Target {
         if (k < 0.15) this.img.setTintFill(0xffffff);
         else this.img.setTint(0x9a80c0);
         const e = k < 0.3 ? k / 0.3 : 1;
-        this.img.setScale(base * (1 + 0.35 * e), base * Math.max(0.02, 1 - 0.95 * k)).setAlpha(1 - Math.max(0, (k - 0.5) / 0.5));
+        this.img.setScale(base * (1 + 0.35 * e) * (1 + punch), base * Math.max(0.02, 1 - 0.95 * k)).setAlpha(1 - Math.max(0, (k - 0.5) / 0.5));
         break;
       }
       case 'gold': {
@@ -658,6 +840,33 @@ export class Enemy implements Target {
           pose = walk[Math.floor(this.t / I.pause.flickMs) % walk.length];
           tilt = Math.sin(this.t / 70) * I.pause.tiltDeg * DEG;
         }
+      } else if (this.type === 'wraith') {
+        const W = FEEL.wraith;
+        bob = Math.sin((this.life / W.bobMs) * TAU + this.seed) * W.bobPx;
+        tilt = Math.sin((this.life / 2100) * TAU + this.seed) * W.tiltDeg * DEG;
+        // Ghost fade, with a fast shimmer warning before it slips away.
+        if (this.phase === 'ghost') {
+          this.img.setAlpha(W.ghostAlpha);
+          this.shadow.place(this.ax, this.ay, 0.5, W.ghostAlpha);
+        } else if (this.phaseLeft < BALANCE.enemies.wraith.telegraphMs) {
+          this.img.setAlpha(0.55 + 0.45 * Math.abs(Math.sin((this.life / 1000) * W.telegraphShimmerHz * Math.PI)));
+        } else {
+          this.img.setAlpha(1);
+        }
+      } else if (this.type === 'slinger') {
+        const S = FEEL.slinger;
+        bob = Math.abs(Math.sin(this.stepPhase * Math.PI)) * S.bobPx;
+        if (this.throwT > 0) {
+          // Wind-up: the sling whirls overhead.
+          const k = 1 - this.throwT / BALANCE.enemies.slinger.windupMs;
+          pose = def.poses.throw ?? walk[0];
+          tilt = Math.sin(k * S.windupTurns * TAU) * S.windupTiltDeg * DEG;
+          scaleY += 0.05 * Math.sin(k * Math.PI);
+        }
+      } else if (this.type === 'bomber') {
+        const F = FEEL.bomber;
+        bob = Math.abs(Math.sin(this.stepPhase * Math.PI)) * F.bobPx;
+        tilt = tilt * 0.5 + Math.sin((this.life / 1000) * F.sloshHz * TAU) * F.sloshDeg * DEG;
       } else {
         const S = FEEL.shield;
         bob = Math.abs(Math.sin(this.stepPhase * Math.PI)) * S.bobPx;
@@ -716,15 +925,38 @@ export class Enemy implements Target {
     Art.setPose(this.img, pose);
     if (this.flashLeft > 0) this.img.setTintFill(0xffffff);
     else if (this.golden) this.img.setTint(0xffe27a, 0xffe27a, 0xffb020, 0xffb020);
+    else if (this.burnLeft > 0) this.img.setTint(FEEL.fire.enemyTint);
     else if (this.slowLeft > 0) this.img.setTint(0xb0fff0);
-    else this.img.clearTint();
-    const s = def.scale * this.popMul;
+    else if (this.type === 'bomber' && this.fuseLeft > 0) {
+      // The fuse: a blink that speeds up as zero approaches.
+      const total = Math.max(1, BALANCE.enemies.bomber.fuseMs);
+      const urgency = 1 - this.fuseLeft / total;
+      const on = Math.sin((this.life / 1000) * FEEL.bomber.fuseBlinkHz * (1 + 3 * urgency) * TAU) > 0;
+      if (on) this.img.setTint(FEEL.bomber.fuseTint);
+      else this.img.clearTint();
+    } else this.img.clearTint();
+    const s = def.scale * this.popMul * (this.elite ? BALANCE.elite.scaleMul : 1);
     this.img.setPosition(ox, oy).setScale(s * (scaleX + sq), s * (scaleY - sq)).setRotation(tilt);
 
-    if (this.type === 'shield' && this.raise > 0.05 && this.state !== State.Lunging) {
+    if (this.type === 'bomber' && this.fuseLeft > 0 && this.state !== State.Lunging) {
+      // Sparks off the lit fuse.
+      const g = 0.4 + 0.6 * Math.abs(Math.sin((this.life / 1000) * 9 * TAU));
+      this.glint.setVisible(true).setPosition(this.ax + 78, this.ay - 150).setTint(0x8aff4a).setAlpha(g)
+        .setScale(0.5 + 0.3 * g).setRotation(this.life / 140).setDepth(this.img.depth + 0.1);
+    } else if (this.type === 'shield' && this.raise > 0.05 && this.state !== State.Lunging) {
       const g = this.raise * (0.55 + 0.45 * Math.sin(this.life / 70));
-      this.glint.setVisible(true).setPosition(this.shieldX, this.shieldY - lift).setAlpha(g)
+      this.glint.setVisible(true).setPosition(this.shieldX, this.shieldY - lift).setTint(0xfff0b0).setAlpha(g)
         .setScale(0.7 + 0.5 * this.raise).setRotation(this.life / 300).setDepth(this.img.depth + 0.1);
+    } else if (this.type === 'slinger' && this.throwT > 0 && this.state !== State.Lunging) {
+      // The stone whirls overhead in its sling.
+      const k = 1 - this.throwT / BALANCE.enemies.slinger.windupMs;
+      const a = k * FEEL.slinger.windupTurns * TAU;
+      this.glint.setVisible(true).setPosition(this.ax + 30 + Math.cos(a) * 34, this.ay - 150 + Math.sin(a) * 22).setTint(0xd8d8e0)
+        .setAlpha(0.9).setScale(0.45).setRotation(a).setDepth(this.img.depth + 0.1);
+    } else if (this.elite && this.state !== State.Lunging) {
+      // Gold trim: a slow-turning star above the head.
+      this.glint.setVisible(true).setPosition(this.ax, this.ay + this.def.hpBar.y + 18).setTint(0xffe08a)
+        .setAlpha(0.65 + 0.3 * Math.sin(this.life / 160)).setScale(0.6).setRotation(this.life / 480).setDepth(this.img.depth + 0.1);
     } else if (this.glint.visible) {
       this.glint.setVisible(false);
     }

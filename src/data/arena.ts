@@ -42,9 +42,25 @@ export const ARENA = {
     { key: 'brazier', x: 1030, y: 525, scale: 0.38 },
     { key: 'brazier', x: 88, y: 1795, scale: 0.4 },
     { key: 'brazier', x: 992, y: 1795, scale: 0.4 },
-    { key: 'pot', x: 88, y: 1505, scale: 0.42 },
-    { key: 'pot', x: 994, y: 1445, scale: 0.42, flip: true },
+    /** Fire braziers INSIDE the arena: an arrow that passes through the flame catches fire.
+     *  Placed high on the side walls, clear of the pillars' shadow from the hero's bow — a shot at
+     *  the top corners lights up, and so does a bank shot off a side wall. */
+    { key: 'brazier', x: 215, y: 700, scale: 0.52 },
+    { key: 'brazier', x: 865, y: 640, scale: 0.52 },
   ],
+
+  /**
+   * Kettle-pots standing on the arena floor. Breakable (one arrow): each hides a little something,
+   * rolled per run. Arrows pass through — a pot never shields an enemy.
+   */
+  pots: [
+    { x: 322, y: 640, scale: 0.5 },
+    { x: 758, y: 788, scale: 0.5, flip: true },
+    { x: 540, y: 1052, scale: 0.5 },
+  ],
+
+  /** How far from a brazier flame's centre an arrow catches fire (design px). */
+  fireRadius: 108,
 
   /**
    * The White Div, between the two lamassu reliefs. `y` is his anchor (the knuckle line).

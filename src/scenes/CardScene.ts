@@ -131,7 +131,7 @@ export class CardScene extends Phaser.Scene {
   private async share(data: { card: HeroCardData; damage: number }): Promise<void> {
     if (!this.dataUrl) return;
     const ticket = await services.game.prepareShare({
-      heroName: data.card.heroName, groupName: data.card.groupName, damage: data.damage, score: data.card.score, cardDataUrl: this.dataUrl,
+      heroName: data.card.heroName, groupName: data.card.groupName, damage: data.damage, score: data.card.score, moment: data.card.moment, cardDataUrl: this.dataUrl,
     });
     const out = await shareTicket(ticket, { dataUrl: this.dataUrl, name: FILE_NAME });
     if (out === 'copied') this.say('متن و لینک کپی شد');

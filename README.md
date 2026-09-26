@@ -2,8 +2,7 @@
 
 A playable vertical slice of a Telegram Mini App archery game: Phaser 3, TypeScript and Vite.
 
-**Status: M5.5. The full loop (title, tutorial, waves, the White Div, the team finisher, Result, Hero Card and sharing), plus school powers, challenge and invite links, and rare surprises. See [REVIEW.md](REVIEW.md) for the review, the power design and the list of surprises.**
-Next: M6 (performance pass and deploy).
+**Status: M6 «اوج» (the Ascension).** Everything from M5.5 (title, tutorial, waves, the White Div, the team finisher, Result, Hero Card and sharing, school powers, challenge links, surprises) **plus the M6 elevation**: three new enemy archetypes (سنگ‌انداز slinger, نفتی‌دار bomber, شبح wraith), fire arrows lit on braziers, breakable pots with loot, the سه‌تیر triple shot, the boss's سنگ‌باران boulder barrage and خشم خاکستری ash-fury phase, daily shared omens (فال لشکر), elites, combo calligraphy, and the run's «لحظهٔ برتر» on every card and share. See [ASSET_REPLACEMENT_GUIDE.md](ASSET_REPLACEMENT_GUIDE.md) for the art that is still placeholder.
 
 ## Run
 
@@ -11,7 +10,7 @@ Next: M6 (performance pass and deploy).
 npm install
 npm run dev        # http://localhost:5173
 npm run dev:lan    # also reachable from your phone on the same Wi-Fi
-npm test           # unit tests (geometry, ricochet, charge curve, waves, effects quality)
+npm test           # unit tests (geometry, ricochet, charge curve, waves, effects quality, omens, boulders, moments)
 npm run build      # packs art, type-checks, writes static files to dist/
 npm run preview    # serves dist/ (use this to judge performance)
 npm run assets     # pack /assets-src → public/assets (add --force to repack everything)
@@ -37,10 +36,47 @@ Enemies appear at the top edge in a puff of purple smoke and walk down. If one r
 - **Imp:** waddles with a sideways drift, sometimes stops to taunt. Weak (a charged shot kills it).
 - **Shield-bearer:** slow, heavy steps that shake the ground. It raises its shield when you aim at it, and arrows that arrive head-on clang off with no damage. **Ricochet** off a wall or pillar to hit it from the side.
 - **Flyer:** zig-zags in the air above its shadow and tumbles when hit. Fragile but hard to line up.
+- **سنگ‌انداز (Slinger):** walks to the upper third, plants its feet and whirls a sling over its head — then lobs a stone at your bow. The stone is a real target: **shoot it out of the air** (an intercept) for a chime, combo and power. A stone landing near you staggers the bow for a beat (never a heart).
+- **نفتی‌دار (Bomber):** a walking cauldron of naphtha. Lethal damage doesn't kill it — it lights a **1.5 s fuse** (blinking faster and faster), then detonates: heavy damage to every enemy around it. Kill it **inside a crowd**; chain two bombers for a massacre. A **fire arrow** sets it off almost at once.
+- **شبح (Wraith):** slips out of the world — solid 2.5 s, a shimmer warning, then **ghost and untouchable** for 1.7 s. Time your shots, or pin it solid with **fire** (a burning wraith cannot phase).
+- **Elites:** from wave 4, some enemies spawn gold-trimmed and tougher (×2.2 hp) and always drop loot.
 
-Each arrow that hits keeps the **combo** going (the ×N badge on the left); an arrow that hits nothing, or losing a heart, ends it. After wave 5 the waves repeat with tougher enemies until the boss phase lands in M3.
+Each arrow that hits keeps the **combo** going (the ×N badge on the left); an arrow that hits nothing, or losing a heart, ends it. At 5/10/15/20/30 the combo **stamps a calligraphy word** across the sky — تیغ، تندر، طوفان، افسانه، and at 30 the game's own name: درفش.
+
+Four waves, then the White Div rises.
+
+### Fire, pots and سه‌تیر
+
+- **Fire arrows:** two braziers stand inside the arena, high on the side walls. An arrow that passes through a flame **catches fire**: a burning trail, and the next enemy hit **burns** for 2 s. Fire ignores nothing — but it lights bombers instantly and pins wraiths solid.
+- **Pots:** three clay pots stand on the floor. One arrow breaks each (the arrow flies on), spilling **coins** (score + power), a **heart**, or a **سه‌تیر bundle** — the next three releases each loose a fan of three arrows.
+
+### فال لشکر — the omen of the day
+
+One omen is drawn each **day, shared by everyone** (seeded by the UTC date — the whole group fights the same day). It colours the arena for the whole run and bends it one way:
+
+- «باد کویر» — arrows drift on a wind, +25 % score
+- «شب لاله» — more flyers, +15 % score
+- «خون آتش» — flames burn bigger and hotter
+- «دیوان خاموش» — enemies neither taunt nor bang, but walk faster; power gains +30 %
+- «ماه آبی» — the group's chain starts lit
+- «بازگشت سیمرغ» — the Homa is guaranteed; the flame bow comes sooner
+
+The omen is announced on the title and at the run's start, and printed on the Result screen, the Hero Card and the share text. `?omen=<id>` overrides it for testing (`?omen=` turns it off).
+
+### The White Div, ascended
+
+After the waves the Div rises as before (gem weak point, the golden-arrow barrier, the stun, the summons) — and now:
+
+- **سنگ‌باران (boulder barrage):** he rips chunks of the wall and hurls them at you. A pulsing ring marks the landing spot. **Shoot the boulder out of the sky** (one charged shot) — or let it land and **crush whatever stands under it** (yes, that includes his own imps: «له شد!»). A close landing staggers the bow for a beat; boulders never cost a heart.
+- **خشم خاکستری (ash fury):** under 25 % hp the world turns hot and red: faster summons (bombers and wraiths join), boulders come in pairs, the gem burns brighter.
+
+### لحظهٔ برتر — the run's story
+
+Every run tracks its best moment — a boulder crushing an enemy, a bomber chain reaction, an intercept streak, one-arrow-two-enemies, a ricochet masterclass, a fire spree, a golden streak — and tells it back on the Result screen, the Hero Card and the share text, so no two cards read the same.
 
 The pause menu has **Effects: full / light**. Light halves every particle count and turns the light shafts off, for weak phones. The choice is saved on the device.
+
+**Debug overlay** (`` ` `` / `D` / 3-finger tap / `?debug=1`), extra keys: `H` hurt, `B` boss now, `N` boss −15 %, `P` power full, `G` golden imp, `J` Homa, `K` flame bow, **`O` cycle the omen, `T` سه‌تیر +3, `U`/`V`/`Y` spawn slinger/bomber/wraith, `X` drop a boulder**.
 
 ## Screens
 
@@ -187,7 +223,7 @@ Keys while it is on: `H` hurt, `B` boss now, `N` boss −15%, `P` power full, `G
 src/
   main.ts                 Telegram init, font + WebP detection, Phaser config (1080x1920, FIT)
   config/                 balance.ts (gameplay numbers), feel.ts (look and motion), display.ts (design size, colours, depths)
-  data/                   arena.ts (layout), entities.ts (per-pose anchors, scales, hitboxes, shadows), waves.ts, lines.ts (epic lines, reactions)
+  data/                   arena.ts (layout, fire braziers, pots), entities.ts (per-pose anchors, scales, hitboxes, shadows), waves.ts, omens.ts (فال لشکر), moments.ts (لحظهٔ برتر), lines.ts (epic lines, reactions)
   assets/                 manifest.ts, Art.ts (key → atlas frame / image / placeholder, anchors, fallbacks), placeholders.ts, fxTextures.ts
   render/                 Atmosphere (bg shader, grade, shafts, motes), BendSprite (bendable pose strip), Shadow
   scenes/                 Boot → Preload → Game (title mode at dusk) + Title → Game (play) + Hud → Result (+ Card); Pause over all
@@ -195,8 +231,10 @@ src/
     AimSystem.ts          point-and-release input, smoothing, charge, cancel     (real time)
     charge.ts             pure charge curve + shot stats (unit tested)
     ArenaCollider.ts      walls/pillars ray casts; shared by preview and arrows (unit tested)
-    ProjectileSystem.ts   pooled arrows, swept collision, ricochet, pierce, stick   (world time)
-    WaveSystem.ts         wave schedule, pooled enemies, wave start/clear signals   (world time)
+    ProjectileSystem.ts   pooled arrows, swept collision, ricochet, pierce, stick, brazier ignition, wind drift   (world time)
+    Hazards.ts            pooled slinger stones + the Div's boulders: arcs, warning rings, intercepts, crushes
+    Pickups.ts            pot loot in flight (coins / heart / سه‌تیر), homing to the hero
+    WaveSystem.ts         wave schedule, pooled enemies, wave start/clear signals, omen filters + elite spawns
     AimView.ts            dotted trajectory, lock-on reticle, charge ring, cancel
     FX.ts / TimeCtl.ts    particles, shake, hit-stop / slow-mo
     Audio.ts              procedural Web Audio SFX + mute + hold (pause)

@@ -113,6 +113,37 @@ export function createFxTextures(scene: Phaser.Scene): void {
 
   createGradeTextures(scene);
   createBossFightTextures(scene);
+  createSpeedlines(scene);
+}
+
+/** Radial speed streaks from the screen edges (transparent centre) — shown at full draw. */
+function createSpeedlines(scene: Phaser.Scene): void {
+  canvas(scene, 'fx_speedlines', 320, 568, (ctx) => {
+    const cx = 160;
+    const cy = 284;
+    let seed = 17;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    for (let i = 0; i < 26; i++) {
+      const a = rnd() * Math.PI * 2;
+      // Streaks live in the outer band only.
+      const r0 = 120 + rnd() * 60;
+      const len = 50 + rnd() * 110;
+      const r1 = r0 + len;
+      const w = 1.5 + rnd() * 3;
+      const alpha = 0.16 + rnd() * 0.5;
+      const grad = ctx.createLinearGradient(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      grad.addColorStop(0, `rgba(255,246,214,0)`);
+      grad.addColorStop(0.4, `rgba(255,246,214,${alpha})`);
+      grad.addColorStop(1, `rgba(255,246,214,0)`);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = w;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      ctx.stroke();
+    }
+  });
 }
 
 /** Barrier plates, feathers, the Simorgh's shadow, stone debris and a light beam. */

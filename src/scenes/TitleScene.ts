@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CALLIGRAPHY_FONT, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
 import { SCHOOLS, type School } from '../config/team';
+import { pickOmen } from '../data/omens';
 import { readStartParam } from '../services/links';
 import { services } from '../services';
 import type { GroupMember } from '../services/GameService';
@@ -58,6 +59,7 @@ export class TitleScene extends Phaser.Scene {
     this.buildSchools();
     this.buildButton();
     this.buildInvite();
+    this.buildOmen();
     this.buildEyes();
     this.buildSound(top);
     void this.buildChip(top);
@@ -189,6 +191,25 @@ export class TitleScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- a friend sent you here
+
+  /** فال لشکر — the day's omen, shared by every player: a small parchment note under the logo. */
+  private buildOmen(): void {
+    const omen = pickOmen(new Date(), new URLSearchParams(window.location.search).get('omen'));
+    if (!omen) return;
+    const t = this.add.text(0, -12, `فال لشکر امروز: ${omen.name}`, {
+      fontFamily: FONT_FAMILY, fontSize: '30px', fontStyle: '900', color: '#1e5a6a', rtl: true,
+    }).setOrigin(0.5);
+    const s = this.add.text(0, 26, omen.line, {
+      fontFamily: FONT_FAMILY, fontSize: '24px', fontStyle: '700', color: '#6a5432', rtl: true,
+    }).setOrigin(0.5);
+    const w = Math.min(920, Math.max(t.width, s.width) + 110);
+    if (t.width > w - 90) t.setScale((w - 90) / t.width);
+    if (s.width > w - 90) s.setScale((w - 90) / s.width);
+    const c = this.add.container(DESIGN_W / 2, 848, [this.add.image(0, 0, parchmentTex(this, w, 104)), t, s]).setAlpha(0);
+    this.tweens.add({ targets: c, alpha: 1, y: { from: 818, to: 848 }, duration: 600, delay: 1450, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: c, angle: { from: -1, to: 1 }, duration: 2000, yoyo: true, repeat: -1, delay: 2050, ease: 'Sine.easeInOut' });
+    this.layer.push(c);
+  }
 
   /** Opened from a challenge or an invite: a parchment ribbon says who, and what to beat. */
   private buildInvite(): void {

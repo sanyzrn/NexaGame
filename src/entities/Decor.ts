@@ -34,6 +34,9 @@ function wobble(t: number, seed: number): number {
 export class Decor {
   private readonly items: Animated[] = [];
   private readonly sparks: Emitter;
+  private readonly braziers: Brazier[] = [];
+  /** The omen of the day can fan the flames (fireMul > 1 = bigger, brighter). */
+  fireMul = 1;
 
   constructor(scene: Phaser.Scene, time: TimeCtl, decor: readonly DecorDef[], pillars: readonly { x: number; y: number }[]) {
     this.sparks = time.track(scene.add.particles(0, 0, 'fx_spark', {
@@ -51,13 +54,22 @@ export class Decor {
 
     for (const p of pillars) staticProp(scene, PILLAR.key, p.x, p.y, PILLAR.scale, PILLAR.shadow);
     for (const d of decor) {
-      if (d.key === 'brazier') this.items.push(new Brazier(scene, d, this.sparks));
-      else if (d.key === 'banner') this.items.push(new Banner(scene, d));
+      if (d.key === 'brazier') {
+        const b = new Brazier(scene, d, this.sparks);
+        this.items.push(b);
+        this.braziers.push(b);
+      } else if (d.key === 'banner') this.items.push(new Banner(scene, d));
       else staticProp(scene, d.key, d.x, d.y, d.scale, d.key === 'pot' ? PROPS.pot.shadow : null, d.flip);
     }
   }
 
+  /** World positions of the brazier flames (an arrow through one catches fire). */
+  flames(): readonly { x: number; y: number }[] {
+    return this.braziers;
+  }
+
   update(dt: number): void {
+    for (const b of this.braziers) b.mul = this.fireMul;
     for (const it of this.items) it.update(dt);
   }
 
@@ -81,9 +93,18 @@ class Brazier implements Animated {
   private readonly fx: number;
   private readonly fy: number;
   private readonly flameScale: number;
+  /** Set by Decor.fireMul (the omen of the day). */
+  mul = 1;
   private readonly seed = Math.random() * 100;
   private t = Math.random() * 10000;
   private sparkIn = 0;
+
+  get x(): number {
+    return this.fx;
+  }
+  get y(): number {
+    return this.fy - 30; // the flame's heart, a little above the bowl
+  }
 
   constructor(scene: Phaser.Scene, d: DecorDef, private readonly sparks: Emitter) {
     const { x, y, scale } = d;
@@ -108,7 +129,7 @@ class Brazier implements Animated {
     const B = FEEL.brazier;
     const a = wobble(this.t, this.seed);
     const b = wobble(this.t * 1.3, this.seed + 5);
-    const s = this.flameScale;
+    const s = this.flameScale * this.mul;
     this.outer.setScale(s * (1 + a * B.flicker.w), s * (1 + b * B.flicker.h)).setAlpha(B.flameAlpha * (0.85 + 0.15 * a)).setRotation(a * 0.06);
     this.inner.setScale(s * 0.6 * (1 + b * 0.08), s * 0.62 * (1 + a * 0.18)).setAlpha(B.flameAlpha * (0.9 + 0.1 * b)).setRotation(b * 0.05);
     const g = 0.5 + 0.5 * (a * 0.7 + b * 0.3);

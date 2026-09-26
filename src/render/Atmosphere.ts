@@ -27,6 +27,8 @@ export class Atmosphere {
   private readonly gradeAdd: Phaser.GameObjects.Image;
   private readonly dark: Phaser.GameObjects.Rectangle;
   private readonly gold: Phaser.GameObjects.Rectangle;
+  /** The omen of the day: a coloured grade over the world for the whole run (null = none). */
+  private omen: Phaser.GameObjects.Image | null = null;
   private backdrop: Phaser.GameObjects.Shader | null = null;
   private colorMatrix: Phaser.FX.ColorMatrix | null = null;
   private bloom: Phaser.FX.Bloom | null = null;
@@ -89,6 +91,28 @@ export class Atmosphere {
     this.applyQuality(services.settings.reducedEffects);
     const off = services.settings.onReducedChange.add((on) => this.applyQuality(on));
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
+  }
+
+  /**
+   * The omen of the day: a soft colour grade multiplied over the arena (created from a vertical
+   * gradient texture key, e.g. built with kit.vGradientTex). Alpha 0 clears it.
+   */
+  applyOmen(texKey: string | null, alpha: number, ms = 600): void {
+    if (!texKey || alpha <= 0) {
+      if (this.omen) this.scene.tweens.add({ targets: this.omen, alpha: 0, duration: ms, onComplete: () => this.omen?.setVisible(false) });
+      return;
+    }
+    if (!this.omen) {
+      const m = 24;
+      this.omen = this.scene.add.image(-m, -m, texKey).setOrigin(0)
+        .setDisplaySize(DESIGN_W + m * 2, DESIGN_H + m * 2)
+        .setBlendMode(Phaser.BlendModes.MULTIPLY).setDepth(DEPTH.grade + 1.5).setScrollFactor(0).setAlpha(0);
+    } else {
+      this.omen.setTexture(texKey);
+    }
+    this.omen.setVisible(true);
+    this.scene.tweens.killTweensOf(this.omen);
+    this.scene.tweens.add({ targets: this.omen, alpha, duration: ms, ease: 'Sine.easeInOut' });
   }
 
   update(realMs: number): void {

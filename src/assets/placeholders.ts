@@ -37,6 +37,11 @@ function paint(tex: Phaser.Textures.CanvasTexture, def: AssetDef, labels: boolea
     case 'imp': paintImp(ctx, pose); break;
     case 'shield': paintShield(ctx, pose); break;
     case 'flyer': paintFlyer(ctx, pose); break;
+    case 'slinger': paintSlinger(ctx, pose); break;
+    case 'bomber': paintBomber(ctx, pose); break;
+    case 'wraith': paintWraith(ctx, pose); break;
+    case 'rock': paintRock(ctx, def.w); break;
+    case 'boulder': paintBoulder(ctx, def.w); break;
     case 'boss': paintBoss(ctx, pose); break;
     case 'pillar': paintPillar(ctx); break;
     case 'arrow': paintArrow(ctx); break;
@@ -49,7 +54,7 @@ function paint(tex: Phaser.Textures.CanvasTexture, def: AssetDef, labels: boolea
     case 'toast': paintToast(ctx, def.w, def.h); break;
     case 'comboBadge': paintComboBadge(ctx, def.w); break;
   }
-  if (labels && ['hero', 'imp', 'shield', 'flyer', 'boss', 'pillar'].includes(def.ph.kind)) label(ctx, def);
+  if (labels && ['hero', 'imp', 'shield', 'flyer', 'slinger', 'bomber', 'wraith', 'boss', 'pillar', 'boulder'].includes(def.ph.kind)) label(ctx, def);
   tex.refresh();
 }
 
@@ -394,6 +399,134 @@ function paintFlyer(ctx: Ctx, pose: string): void {
   ellipse(ctx, cx, cy, 46, 48, hit ? '#e0c4ea' : '#7b3a8c', '#3a1542', 4);
   horns(ctx, cx, cy - 36, 22, 36);
   eyes(ctx, cx, cy - 10, 15, 9, hit);
+}
+
+/** سنگ‌انداز — a lean, olive-skinned div with a sling: tan and turquoise, one stone overhead. */
+function paintSlinger(ctx: Ctx, pose: string): void {
+  const hit = pose === 'hit';
+  const throwing = pose === 'throw';
+  const cx = 128;
+  ellipse(ctx, cx, 232, 44, 11, 'rgba(0,0,0,0.3)');
+  const step = pose === 'walk2' ? -1 : 1;
+  line(ctx, cx - 16, 190, cx - 22 - step * 5, 228, '#3a3a20', 13);
+  line(ctx, cx + 16, 190, cx + 22 - step * 5, 228, '#3a3a20', 13);
+  const body = hit ? '#d8d8b0' : '#7a8a4a';
+  // Sling arm raised overhead when winding up / throwing.
+  if (throwing) {
+    line(ctx, cx - 34, 148, cx - 12, 84, body, 12);
+    line(ctx, cx - 12, 84, cx + 26, 58, '#d8c8a0', 3);
+    ellipse(ctx, cx + 32, 54, 13, 13, '#8a8a8a', '#4a4a4a', 3);
+  } else {
+    line(ctx, cx - 34, 148, cx - 58, 176 - step * 8, body, 12);
+  }
+  line(ctx, cx + 34, 148, cx + 60, 176 + step * 8, body, 12);
+  ellipse(ctx, cx, 150, 42, 50, body, '#2e3618', 4);
+  ellipse(ctx, cx, 166, 24, 22, hit ? '#eeeec8' : '#98a862');
+  // turban
+  ellipse(ctx, cx, 104, 40, 26, '#e8d8b0', '#8a7448', 4);
+  ellipse(ctx, cx, 92, 26, 18, '#f0e4c8', '#8a7448', 3);
+  // small single horn through the turban
+  poly(ctx, [cx + 30, 100, cx + 52, 74, cx + 34, 96], '#eadbb8', '#6b5a3a', 3);
+  eyes(ctx, cx, 130, 14, 8, hit, '#ffd23a');
+  poly(ctx, [cx - 14, 148, cx - 7, 158, cx, 148, cx + 7, 158, cx + 14, 148], '#fff', '#2e3618', 2);
+  // a spare stone in the off hand
+  ellipse(ctx, cx + 62, 190 + step * 4, 10, 10, '#8a8a8a', '#4a4a4a', 3);
+}
+
+/** نفتی‌دار — a fat green div hugging a cauldron of glowing naphtha. */
+function paintBomber(ctx: Ctx, pose: string): void {
+  const hit = pose === 'hit';
+  const cx = 160;
+  ellipse(ctx, cx, 290, 74, 17, 'rgba(0,0,0,0.3)');
+  const step = pose === 'walk2' ? -1 : 1;
+  line(ctx, cx - 30, 252, cx - 38 - step * 6, 286, '#233a18', 20);
+  line(ctx, cx + 30, 252, cx + 38 - step * 6, 286, '#233a18', 20);
+  const body = hit ? '#c8e8b0' : '#4a7a34';
+  ellipse(ctx, cx, 190, 88, 96, body, '#1c2e10', 5);
+  ellipse(ctx, cx, 208, 52, 46, hit ? '#e4f4d4' : '#649a48');
+  // horns
+  horns(ctx, cx, 108, 40, 54);
+  eyes(ctx, cx, 142, 20, 10, hit, '#b0ff5a');
+  poly(ctx, [cx - 18, 160, cx - 9, 172, cx, 160, cx + 9, 172, cx + 18, 160], '#fff', '#1c2e10', 2);
+  // the cauldron carried in front (towards the hero)
+  const kx = cx + 78;
+  const ky = 210 + step * 4;
+  line(ctx, cx + 70, 160, kx - 6, ky - 46, body, 18);
+  poly(ctx, [kx - 52, ky - 40, kx + 52, ky - 40, kx + 40, ky + 52, kx - 40, ky + 52], '#2a2a30', '#0e0e12', 6);
+  // glowing naphtha slosh
+  ellipse(ctx, kx, ky - 38, 44, 14, '#8aff4a');
+  ellipse(ctx, kx - 12, ky - 42, 18, 8, '#d8ffa0');
+  // rivets
+  for (const ry of [ky - 18, ky + 16]) {
+    ellipse(ctx, kx - 34, ry, 4, 4, '#55555f');
+    ellipse(ctx, kx + 34, ry, 4, 4, '#55555f');
+  }
+}
+
+/** شبح — a hooded spectre, pale cyan, trailing a wisp tail instead of legs. */
+function paintWraith(ctx: Ctx, pose: string): void {
+  const hit = pose === 'hit';
+  const cx = 160;
+  const step = pose === 'walk2' ? -1 : 1;
+  const body = hit ? '#e8f8ff' : '#9fd8e8';
+  const dark = '#1f4a5a';
+  // wisp tail (three trailing tongues, waving with the step)
+  poly(ctx, [cx - 44, 190, cx + 44, 190, cx + 30, 250 + step * 10, cx + 8, 232, cx - 12, 256 - step * 8, cx - 32, 236], body, dark, 5);
+  ellipse(ctx, cx, 150, 58, 74, body, dark, 5);
+  // hood
+  poly(ctx, [cx - 52, 128, cx + 52, 128, cx + 30, 60, cx - 30, 60], '#3f6a7a', dark, 5);
+  ellipse(ctx, cx, 74, 30, 22, '#35586a', dark, 4);
+  // hollow glowing eyes inside the hood
+  const ey = 104;
+  if (hit) {
+    line(ctx, cx - 24, ey - 8, cx - 6, ey + 8, '#08141a', 5);
+    line(ctx, cx - 6, ey - 8, cx - 24, ey + 8, '#08141a', 5);
+    line(ctx, cx + 6, ey - 8, cx + 24, ey + 8, '#08141a', 5);
+    line(ctx, cx + 24, ey - 8, cx + 6, ey + 8, '#08141a', 5);
+  } else {
+    ellipse(ctx, cx - 15, ey, 8, 12, '#c8fbff');
+    ellipse(ctx, cx + 15, ey, 8, 12, '#c8fbff');
+    ellipse(ctx, cx - 15, ey, 3.5, 6, '#08141a');
+    ellipse(ctx, cx + 15, ey, 3.5, 6, '#08141a');
+  }
+  // tattered arm sleeves
+  poly(ctx, [cx - 56, 140, cx - 92, 176 + step * 8, cx - 60, 168], body, dark, 4);
+  poly(ctx, [cx + 56, 140, cx + 92, 176 - step * 8, cx + 60, 168], body, dark, 4);
+  // faint inner glow
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ellipse(ctx, cx, 150, 30, 44, '#dffcff');
+  ctx.restore();
+}
+
+/** The slinger's stone: a small irregular chunk. */
+function paintRock(ctx: Ctx, w: number): void {
+  const c = w / 2;
+  const r = w * 0.42;
+  poly(ctx, [c - r, c + r * 0.2, c - r * 0.7, c - r * 0.8, c + r * 0.2, c - r, c + r, c - r * 0.3, c + r * 0.9, c + r * 0.6, c + r * 0.3, c + r], '#8a8a92', '#3d3d44', 4);
+  line(ctx, c - r * 0.4, c - r * 0.3, c + r * 0.1, c + r * 0.3, '#3d3d44', 3);
+  line(ctx, c + r * 0.1, c + r * 0.3, c + r * 0.55, c - r * 0.05, '#3d3d44', 3);
+}
+
+/** The White Div's boulder: a big jagged wall chunk with magic cracks. */
+function paintBoulder(ctx: Ctx, w: number): void {
+  const c = w / 2;
+  const r = w * 0.44;
+  const rand = rng(29);
+  const pts: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const rr = r * (0.78 + rand() * 0.22);
+    pts.push(c + Math.cos(a) * rr, c + Math.sin(a) * rr);
+  }
+  poly(ctx, pts, '#6e625a', '#2e2620', 8);
+  // chipped facets
+  poly(ctx, [c - r * 0.6, c - r * 0.5, c - r * 0.1, c - r * 0.7, c + r * 0.2, c - r * 0.35], '#8a7c72');
+  poly(ctx, [c + r * 0.15, c + r * 0.5, c + r * 0.65, c + r * 0.25, c + r * 0.55, c - r * 0.05], '#5a4f46');
+  // div-magic cracks
+  line(ctx, c - r * 0.5, c - r * 0.2, c + r * 0.05, c + r * 0.25, '#b35cd1', 5);
+  line(ctx, c + r * 0.05, c + r * 0.25, c + r * 0.55, c - r * 0.1, '#b35cd1', 5);
+  line(ctx, c + r * 0.05, c + r * 0.25, c - r * 0.1, c + r * 0.65, '#8a3ab8', 4);
 }
 
 function paintBoss(ctx: Ctx, pose: string): void {

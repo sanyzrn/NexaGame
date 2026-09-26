@@ -48,6 +48,8 @@ export interface ShareRequest {
   damage: number;
   /** The run's score: the share becomes a challenge («رکوردم را بزن») with this to beat. */
   score: number;
+  /** The run's best moment, appended to the share text («لحظهٔ برتر»). */
+  moment?: string | null;
   /** PNG data URL of the rendered Hero Card (a backend can upload it and prepare a Telegram message). */
   cardDataUrl?: string;
 }

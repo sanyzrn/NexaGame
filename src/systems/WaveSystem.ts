@@ -20,6 +20,9 @@ const POOL = 28;
  * enemies on schedule from a pool, reports when a wave starts and is cleared, then waits and starts
  * the next. After the last one it reports onAllCleared (the boss rises) and stops; the boss can
  * still summon enemies from the same pool.
+ *
+ * `mods` (set before start): the omen of the day — enemy speed multiplier and a schedule filter
+ * (e.g. extra flyers on a night-of-tulips run).
  */
 export class WaveSystem {
   readonly onWaveStart = new Signal<WaveInfo>();
@@ -28,6 +31,8 @@ export class WaveSystem {
   readonly onAllCleared = new Signal<WaveInfo>();
   readonly enemies: Enemy[] = [];
   readonly info: WaveInfo = { index: -1, total: Math.min(WAVES.length, BALANCE.boss.afterWave) };
+  /** The omen of the day, applied to spawns (set by GameScene before start). */
+  mods: { speedMul?: number; filter?: (q: ScheduledSpawn[]) => ScheduledSpawn[] } = {};
 
   private queue: ScheduledSpawn[] = [];
   private next = 0;
@@ -85,11 +90,12 @@ export class WaveSystem {
   }
 
   /** The boss calls enemies out of the wall: they burst from these cracks. */
-  summon(count: number, points: readonly { x: number; y: number }[]): void {
+  summon(count: number, points: readonly { x: number; y: number }[], types: readonly Enemy['type'][] = ['imp']): void {
     const start = Math.floor(Math.random() * points.length);
     for (let i = 0; i < count; i++) {
       const pt = points[(start + i) % points.length];
-      this.freeEnemy().spawn('imp', pt.x + Phaser.Math.Between(-30, 30), 1, pt.y);
+      const type = types[i % types.length];
+      this.freeEnemy().spawn(type, pt.x + Phaser.Math.Between(-30, 30), 1, pt.y, { speedMul: this.mods.speedMul });
     }
   }
 
@@ -121,7 +127,9 @@ export class WaveSystem {
   private begin(): void {
     const info = this.info;
     info.index++;
-    this.queue = scheduleWave(WAVES[info.index], Math.random);
+    let q = scheduleWave(WAVES[info.index], Math.random);
+    if (this.mods.filter) q = this.mods.filter(q);
+    this.queue = q;
     this.next = 0;
     this.waveT = 0;
     this.running = true;
@@ -140,6 +148,6 @@ export class WaveSystem {
   private spawn(s: ScheduledSpawn): void {
     const m = BALANCE.waves.sideMargin;
     const x = ARENA.walls.left + m + s.x * (ARENA.walls.right - ARENA.walls.left - m * 2);
-    this.freeEnemy().spawn(s.type, x, 1);
+    this.freeEnemy().spawn(s.type, x, 1, undefined, { elite: s.elite, speedMul: this.mods.speedMul });
   }
 }

@@ -56,11 +56,15 @@ export interface FireOptions {
   fromAbove?: boolean;
   /** The flame bow's fiery trail (a style reward; no gameplay change). */
   flame?: boolean;
+  /** Already burning when loosed (the flame bow's gift now lights enemies too). */
+  fire?: boolean;
 }
 
 export interface ArrowHit {
   damage: number;
   crit: boolean;
+  /** A fire arrow (lit by a brazier): sets enemies burning; bombers detonate fast. */
+  fire?: boolean;
   x: number;
   y: number;
   dirX: number;
@@ -114,6 +118,8 @@ interface Arrow {
   feather: boolean;
   fromAbove: boolean;
   flame: boolean;
+  /** Burning (lit by a brazier flame): flame trail + burns what it hits. */
+  fire: boolean;
   kills: number;
 }
 
@@ -123,6 +129,13 @@ export class ProjectileSystem {
   readonly onHit = new Signal<HitEvent>();
   readonly onBounce = new Signal<{ x: number; y: number; kind: SurfaceKind }>();
   readonly onEnd = new Signal<ArrowEndEvent>();
+  /** An arrow just caught fire in a brazier's flame. */
+  readonly onIgnite = new Signal<{ x: number; y: number }>();
+
+  /** A wind across the arena (the omen of the day): arrows curve by this many deg/s. */
+  driftDegPerSec = 0;
+  /** Brazier flames: an arrow passing within r of a flame centre catches fire. */
+  fireZones: (() => readonly { x: number; y: number; r: number }[] | null) | null = null;
 
   private readonly arrows: Arrow[] = [];
   private readonly sh: StaticHit = { t: 0, nx: 0, ny: 0, kind: 'wall', bounces: false };
@@ -140,7 +153,7 @@ export class ProjectileSystem {
       this.arrows.push({
         img, mode: Mode.Idle, active: false, timer: 0, rot: 0, spin: 0, vx: 0, vy: 0, x: 0, y: 0, dx: 0, dy: -1, speed: 0, damage: 0, crit: false,
         pierceLeft: 0, bounces: 0, life: 0, hits: 0, hitIds: [], trailCarry: 0, homing: null, feather: false,
-        fromAbove: false, flame: false, kills: 0,
+        fromAbove: false, flame: false, fire: false, kills: 0,
       });
     }
   }
@@ -162,6 +175,7 @@ export class ProjectileSystem {
     a.feather = opts?.feather ?? false;
     a.fromAbove = opts?.fromAbove ?? false;
     a.flame = opts?.flame ?? false;
+    a.fire = opts?.fire ?? false;
     a.kills = 0;
     a.mode = Mode.Flying;
     a.active = true;
@@ -179,7 +193,7 @@ export class ProjectileSystem {
     a.hitIds.length = 0;
     a.trailCarry = 0;
     a.img.setVisible(true).setAlpha(1).setPosition(x, y).setRotation(Math.atan2(dy, dx))
-      .setTint(a.feather ? 0xb8fff0 : shot.crit ? 0xfff0b0 : 0xffffff).setScale(BALANCE.arrow.scale * (shot.crit ? 1.15 : 1));
+      .setTint(a.feather ? 0xb8fff0 : a.fire ? FEEL.fire.arrowTint : shot.crit ? 0xfff0b0 : 0xffffff).setScale(BALANCE.arrow.scale * (shot.crit ? 1.15 : 1));
   }
 
   update(dt: number): void {
@@ -266,6 +280,13 @@ export class ProjectileSystem {
 
   private step(a: Arrow, distance: number): void {
     const r = BALANCE.arrow.radius;
+    if (this.driftDegPerSec !== 0) {
+      // The day's wind: a gentle constant curve (deg rotated over this frame's travel time).
+      const ang = Phaser.Math.DegToRad(this.driftDegPerSec) * (distance / Math.max(1, a.speed));
+      const next = Math.atan2(a.dy, a.dx) + ang;
+      a.dx = Math.cos(next);
+      a.dy = Math.sin(next);
+    }
     let remaining = distance;
     for (let guard = 0; guard < 8 && remaining > 0 && a.active; guard++) {
       const hasStatic = this.collider.castStatic(a.x, a.y, a.dx, a.dy, remaining, this.sh);
@@ -283,7 +304,28 @@ export class ProjectileSystem {
 
       const nx = a.x + a.dx * travel;
       const ny = a.y + a.dy * travel;
-      a.trailCarry = this.fx.trail(a.x, a.y, nx, ny, a.crit, a.trailCarry, a.feather, a.flame);
+      // A brazier flame crossed by this segment lights the arrow (segment test: frame-rate safe).
+      if (!a.fire && this.fireZones) {
+        const zones = this.fireZones();
+        if (zones) {
+          const sx = nx - a.x;
+          const sy = ny - a.y;
+          const len2 = sx * sx + sy * sy || 1;
+          for (const z of zones) {
+            let t = ((z.x - a.x) * sx + (z.y - a.y) * sy) / len2;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const px = a.x + sx * t - z.x;
+            const py = a.y + sy * t - z.y;
+            if (px * px + py * py <= z.r * z.r) {
+              a.fire = true;
+              a.img.setTint(FEEL.fire.arrowTint);
+              this.onIgnite.emit({ x: a.x + sx * t, y: a.y + sy * t });
+              break;
+            }
+          }
+        }
+      }
+      a.trailCarry = this.fx.trail(a.x, a.y, nx, ny, a.crit, a.trailCarry, a.feather, a.fire || a.flame);
       a.x = nx;
       a.y = ny;
       remaining -= travel;
@@ -291,7 +333,7 @@ export class ProjectileSystem {
       if (target) {
         a.hitIds.push(target.id);
         const h = this.hit;
-        h.damage = a.damage; h.crit = a.crit; h.x = a.x; h.y = a.y; h.dirX = a.dx; h.dirY = a.fromAbove ? Math.abs(a.dy) : a.dy; h.bounces = a.bounces;
+        h.damage = a.damage; h.crit = a.crit; h.fire = a.fire; h.x = a.x; h.y = a.y; h.dirX = a.dx; h.dirY = a.fromAbove ? Math.abs(a.dy) : a.dy; h.bounces = a.bounces;
         const outcome = target.receiveArrow(h);
         if (outcome === 'hit' || outcome === 'kill') a.hits++;
         if (outcome === 'kill') a.kills++;

@@ -52,7 +52,8 @@ export class MockGameService implements GameService {
   }
 
   async prepareShare(request: ShareRequest): Promise<ShareTicket> {
-    const text = `${request.heroName} در «درفش» ${faNum(request.score)} امتیاز گرفت و ${faNum(request.damage)} آسیب به دیو سپید زد! ⚔️ رکوردش را می‌زنی؟`;
+    const moment = request.moment ? ` «${request.moment}»` : '';
+    const text = `${request.heroName} در «درفش» ${faNum(request.score)} امتیاز گرفت و ${faNum(request.damage)} آسیب به دیو سپید زد!${moment} ⚔️ رکوردش را می‌زنی؟`;
     const param = encodeStartParam({ kind: 'challenge', score: request.score, name: request.heroName });
     return { kind: 'link', url: appLink(param), text };
   }

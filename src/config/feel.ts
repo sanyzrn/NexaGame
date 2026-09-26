@@ -20,6 +20,8 @@ export const FEEL = {
     hurt: { ms: 240, intensity: 0.009 },
     growl: { ms: 480, intensity: 0.0018 },
     step: { ms: 60, intensity: 0.0006 },
+    boom: { ms: 420, intensity: 0.012 },
+    boulder: { ms: 520, intensity: 0.014 },
   },
   /** Full-screen white flash on critical hits. */
   critFlash: { alpha: 0.12, ms: 120 },
@@ -173,6 +175,21 @@ export const FEEL = {
       stumbleTiltDeg: 4,
       embersPerSec: 7,
     },
+    /** خشم خاکستری (ash fury, hp < lowHpPct): a hotter body, faster embers, a red grade. */
+    fury: {
+      tint: 0xffd8c0,
+      embersPerSec: 16,
+      grade: { top: '#5a2a20', mid: '#7a3a28', bottom: '#3a1a14', alpha: 0.22 },
+      gemBoost: 1.5,
+    },
+    /** سنگ‌باران (the boulder hurl): lean back, rip, sweep forward. */
+    hurl: {
+      ms: 980,
+      leanPx: 26,
+      sweepPx: 34,
+      atMs: 560,
+      debris: 18,
+    },
     shatter: { grid: 4, flyPx: [220, 720] as const, spinDeg: 540, ms: 1500 },
   },
 
@@ -284,6 +301,11 @@ export const FEEL = {
     x: 118,
     y: 640,
     tiers: [2, 5, 10, 20] as readonly number[],
+    /** Calligraphy words that stamp in as the combo climbs (exact value → word). */
+    words: [
+      [5, 'تیغ!'], [10, 'تندر!'], [15, 'طوفان!'], [20, 'افسانه!'], [30, 'درفش!'],
+    ] as readonly (readonly [number, string])[],
+    wordMs: 950,
     /** Flame particles per second behind the badge, per tier. */
     flames: [0, 6, 14, 26] as readonly number[],
     flameScale: [0, 0.45, 0.65, 0.9] as readonly number[],
@@ -467,6 +489,46 @@ export const FEEL = {
   /** Phaser FX (glow, barrel, bloom, colour matrix). Only in WebGL, and off with "light effects". */
   shaderFx: true,
 
+  /** Fire arrows (lit by a brazier's flame) and burning enemies. */
+  fire: {
+    /** Motes of flame on the arrow while it burns. */
+    motesPerSec: 42,
+    /** Tint of a burning arrow's sprite. */
+    arrowTint: 0xffb060,
+    /** Body flame puffs per second on a burning enemy. */
+    enemyFlamesPerSec: 14,
+    enemyTint: 0xff9a4a,
+    /** The flash and ring of a bomber's blast. */
+    boom: { ringFrom: 0.4, ringTo: 4.2, ringMs: 520, flash: 0.22 },
+  },
+
+  /** Rocks and boulders in flight (gameplay numbers in BALANCE). */
+  hazards: {
+    /** Red-gold warning ring where a boulder will land. */
+    warn: { from: 0.3, to: 1, pulseHz: 2.4, alpha: 0.75 },
+    rock: { spinDegPerSec: 420, trailEvery: 60 },
+    boulder: { spinDegPerSec: 70, trailEvery: 42, shadowScale: 2.6 },
+    /** Dust and debris counts on landing / intercept. */
+    rockBurst: 8,
+    boulderBurst: 26,
+  },
+
+  /** Pot shatter and pickups. */
+  pots: {
+    shards: 9,
+    /** A broken pot's drops arc up, then home to the hero. */
+    dropUpMs: 260,
+    dropUpPx: 150,
+    dropHomeMs: 460,
+    pickupScale: 0.5,
+  },
+
+  /** Speed lines while the bow is fully drawn (a held breath). */
+  speedlines: { alpha: 0.5, inMs: 180, outMs: 260 },
+
+  /** Micro camera punch toward a critical hit. */
+  punch: { zoom: 1.018, ms: 90, backMs: 170 },
+
   // ---------------------------------------------------------------- hero
 
   hero: {
@@ -589,6 +651,32 @@ export const FEEL = {
     zigPeriodMs: 2800,
     tumble: { ms: 440, turns: 0.55, dropPx: 45 },
     shadowMinScale: 0.55,
+  },
+  slinger: {
+    stridePx: 34,
+    bobPx: 5,
+    /** Wind-up: the sling whirls overhead (this many turns). */
+    windupTurns: 2.2,
+    windupTiltDeg: 7,
+  },
+  bomber: {
+    stridePx: 40,
+    bobPx: 3,
+    /** The cauldron sloshes as it walks. */
+    sloshDeg: 4,
+    sloshHz: 6,
+    /** Fuse: blinks faster and faster toward the blast. */
+    fuseBlinkHz: 9,
+    fuseTint: 0xffe08a,
+  },
+  wraith: {
+    /** Bobbing drift while solid. */
+    bobPx: 12,
+    bobMs: 1100,
+    tiltDeg: 6,
+    /** Ghost fade and the shimmer that warns of it. */
+    ghostAlpha: 0.26,
+    telegraphShimmerHz: 16,
   },
 } as const;
 

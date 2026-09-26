@@ -31,6 +31,11 @@ export class PowerMeter {
     this.value = 1;
   }
 
+  /** A custom amount (pot coins and other little finds). Returns how much was added. */
+  addRaw(amount: number): number {
+    return this.raise(amount);
+  }
+
   /** Uses the power: true (and empties) only when full. */
   spend(): boolean {
     if (!this.full) return false;

@@ -48,6 +48,10 @@ export const POSE_FALLBACK: Readonly<Record<string, string>> = {
   imp_hit: 'imp_walk_1',
   shield_hit: 'shield_walk_2',
   flyer_hit: 'flyer_up',
+  slinger_hit: 'slinger_walk_1',
+  slinger_throw: 'slinger_walk_1',
+  bomber_hit: 'bomber_walk_1',
+  wraith_hit: 'wraith_walk_1',
   boss_roar: 'boss_idle',
   boss_stunned: 'boss_idle',
 };
@@ -81,7 +85,7 @@ export const PROPS = {
 } as const;
 
 export interface EnemyDef {
-  poses: { walk: readonly string[]; hit: string };
+  poses: { walk: readonly string[]; hit: string; throw?: string };
   scale: number;
   hitbox: CircleBox;
   /** Health bar centre, relative to the anchor (tight above the head). */
@@ -115,6 +119,30 @@ export const ENEMIES = {
     hpBar: { y: -98, w: 90 },
     shadow: { rx: 78, ry: 20 },
     color: 0xe0629a,
+  },
+  slinger: {
+    poses: { walk: ['slinger_walk_1', 'slinger_walk_2'], hit: 'slinger_hit', throw: 'slinger_throw' },
+    scale: 0.52,
+    hitbox: circle(0, -64, 48),
+    hpBar: { y: -142, w: 92 },
+    shadow: { rx: 82, ry: 21 },
+    color: 0xa8c46a,
+  },
+  bomber: {
+    poses: { walk: ['bomber_walk_1', 'bomber_walk_2'], hit: 'bomber_hit' },
+    scale: 0.6,
+    hitbox: circle(0, -92, 64),
+    hpBar: { y: -196, w: 110 },
+    shadow: { rx: 104, ry: 26 },
+    color: 0x7ad84a,
+  },
+  wraith: {
+    poses: { walk: ['wraith_walk_1', 'wraith_walk_2'], hit: 'wraith_hit' },
+    scale: 0.56,
+    hitbox: circle(0, -78, 50),
+    hpBar: { y: -172, w: 88 },
+    shadow: { rx: 74, ry: 16 },
+    color: 0x9fe8ff,
   },
 } as const satisfies Record<string, EnemyDef>;
 

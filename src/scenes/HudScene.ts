@@ -19,7 +19,7 @@ import { RescueSpirit } from '../ui/RescueSpirit';
 import { SparkFlight } from '../ui/SparkFlight';
 import { TeamToasts, type TeamGate } from '../ui/TeamToasts';
 import { UI, bannerTex, barFillTex, gradientText, shineTex } from '../ui/kit';
-import { faMultiplier, faNum } from '../utils/fa';
+import { faDigits, faMultiplier, faNum } from '../utils/fa';
 import type { GameScene } from './GameScene';
 
 /** Top row (design px, before the safe-area inset). */
@@ -83,6 +83,10 @@ export class HudScene extends Phaser.Scene {
   private barT = 0;
   private offs: (() => void)[] = [];
   private power!: PowerButton;
+  /** سه‌تیر charges: little gold arrows above the power orb. */
+  private triple: Phaser.GameObjects.Container | null = null;
+  private triplePips: Phaser.GameObjects.Image[] = [];
+  private tripleLabel: Phaser.GameObjects.Text | null = null;
   /** Set at the end of create: the Game scene waits for it before starting the run. */
   ready = false;
 
@@ -122,6 +126,7 @@ export class HudScene extends Phaser.Scene {
     this.power.root.setVisible(false);
     this.input.keyboard?.on('keydown-Q', () => this.power.fire());
     this.buildToast();
+    this.buildTriple();
 
     // Safe areas: notches, and Telegram's own controls in fullscreen.
     const relayout = () => this.applySafeArea();
@@ -368,6 +373,36 @@ export class HudScene extends Phaser.Scene {
 
   setHearts(n: number, animate = true): void {
     this.hearts.set(n, animate);
+  }
+
+  // ---------------------------------------------------------------- سه‌تیر charges
+
+  private buildTriple(): void {
+    const B = FEEL.powers.button;
+    const c = this.add.container(B.x, B.y - B.r - 40).setDepth(Z.top).setVisible(false);
+    for (let i = 0; i < 3; i++) {
+      const pip = this.add.image((i - 1) * 34, 0, 'arrow').setScale(0.16).setTint(0xffd24a).setRotation(-Math.PI / 2);
+      c.add(pip);
+      this.triplePips.push(pip);
+    }
+    this.tripleLabel = gradientText(this.add.text(0, 34, '', {
+      fontFamily: FONT_FAMILY, fontSize: '30px', fontStyle: '900', rtl: true, stroke: '#1a0e04', strokeThickness: 4,
+    }).setOrigin(0.5), ['#fff4c0', '#ffd24a', '#c98a24']);
+    c.add(this.tripleLabel);
+    this.triple = c;
+  }
+
+  /** Show the سه‌تیر charges (0 hides the row). */
+  setTriple(n: number): void {
+    const c = this.triple;
+    if (!c) return;
+    c.setVisible(n > 0);
+    for (let i = 0; i < this.triplePips.length; i++) this.triplePips[i].setVisible(i < Math.min(3, n));
+    this.tripleLabel?.setText(n > 3 ? `×${faDigits(String(n))}` : '');
+    if (n > 0) {
+      c.setScale(1.18);
+      this.tweens.add({ targets: c, scale: 1, duration: 260, ease: 'Back.easeOut' });
+    }
   }
 
   // ---------------------------------------------------------------- banners

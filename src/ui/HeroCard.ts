@@ -25,6 +25,10 @@ export interface HeroCardData {
   school: School;
   /** The Homa's shadow fell on the hero: a golden «هما» medallion (rare, so worth showing off). */
   homa: boolean;
+  /** The day's shared omen, under the epic line (فال لشکر). */
+  omen: { name: string; line: string } | null;
+  /** The run's best moment (لحظهٔ برتر). */
+  moment: string | null;
 }
 
 const W = 1080;
@@ -167,7 +171,10 @@ export async function renderHeroCard(scene: Phaser.Scene, d: HeroCardData): Prom
   ctx.font = `700 ${ls}px ${CALLIGRAPHY_FONT}`;
   while (ctx.measureText(d.epicLine).width > INNER.w - 70 && ls > 32) ctx.font = `700 ${(ls -= 2)}px ${CALLIGRAPHY_FONT}`;
   text(ctx, d.epicLine, 540, 692, `700 ${ls}px ${CALLIGRAPHY_FONT}`, CRIMSON);
-  divider(ctx, 760, 560);
+  // لحظهٔ برتر + فال لشکر — the run's story and the day's shared omen.
+  if (d.moment) text(ctx, `لحظهٔ برتر: ${d.moment}`, 540, 736, `700 26px ${FONT_FAMILY}`, '#9a6a20');
+  if (d.omen) text(ctx, `فال امروز: ${d.omen.name} — ${d.omen.line}`, 540, 772, `700 24px ${FONT_FAMILY}`, '#2a7a8a');
+  divider(ctx, 760 + (d.moment ? 34 : 0) + (d.omen ? 26 : 0), 560);
 
   // The hero in a gold halo, the group's banner planted beside him.
   const halo = ctx.createRadialGradient(540, 1010, 30, 540, 1010, 330);

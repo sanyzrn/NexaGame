@@ -68,12 +68,57 @@ export const BALANCE = {
       frontalDeg: 50,
     },
     flyer: { hp: 45, speed: 80 },
+    /** سنگ‌انداز: stops at slinger.rangeY and lobs destructible rocks at the hero. */
+    slinger: {
+      hp: 90,
+      speed: 58,
+      /** Walks down to a random stop line in this band, then holds position. */
+      stopY: [640, 900] as const,
+      /** First throw after arriving, then one every cooldownMs (±20%). */
+      firstThrowMs: 900,
+      cooldownMs: 3000,
+      /** Telegraphed wind-up before the stone leaves the sling. */
+      windupMs: 820,
+      rock: {
+        hp: 1,
+        /** Flight time and arc height of the lob. */
+        flightMs: 1150,
+        arcPx: 320,
+        radius: 26,
+        /** Aims this far ahead of the hero's bow (fraction of flight time × nothing fancy). */
+        aimSpreadPx: 120,
+      },
+    },
+    /** نفتی‌دار: a walking cauldron of naphtha. Explodes on death — use it against the crowd. */
+    bomber: {
+      hp: 150,
+      speed: 34,
+      /** Lethal damage lights the fuse instead of killing outright… */
+      fuseMs: 1500,
+      /** …but a fire arrow sets it off almost instantly. */
+      fireFuseMs: 180,
+      boom: {
+        radius: 270,
+        /** Damage to enemies caught in the blast (the player is never hurt by it). */
+        damage: 130,
+      },
+    },
+    /** شبح: fades in and out of the world; only solid wounds count. Fire pins it solid. */
+    wraith: {
+      hp: 55,
+      speed: 92,
+      solidMs: 2500,
+      ghostMs: 1700,
+      /** Shimmer warning before it slips out of the world. */
+      telegraphMs: 420,
+      hoverPx: 46,
+    },
   },
 
   /** The White Div (دیو سپید). Percentages are of his max hp. */
   boss: {
     /** He rises after this many waves are cleared. */
-    afterWave: 3,
+    afterWave: 4,
     hp: 5000,
     /** Arrows through the chest gem deal this much more. */
     gemMultiplier: 2,
@@ -86,6 +131,28 @@ export const BALANCE = {
     lowHpPct: 0.25,
     /** He calls imps out of the wall: first after firstMs, then every … (per phase). */
     summon: { firstMs: 6000, phase1EveryMs: 11000, armorEveryMs: 8500, count: [2, 3] as const },
+    /** سنگ‌باران: he rips chunks of the wall and hurls them. Shoot them down. */
+    boulders: {
+      /** Scripted barrages when his hp first crosses these fractions (high → low). */
+      at: [0.7, 0.45] as const,
+      /** Then a repeating barrage while armoured / in ash fury. */
+      armorEveryMs: 15000,
+      furyEveryMs: 9000,
+      /** In ash fury each throw looses two boulders. */
+      furyCount: 2,
+      hp: 60,
+      radius: 88,
+      flightMs: 2350,
+      arcPx: 210,
+      /** A boulder that lands crushes enemies this close (a gift for the quick-witted). */
+      crushRadius: 150,
+      crushDamage: 200,
+      /** A boulder that lands near the hero staggers the bow for this long (never a heart). */
+      heroStaggerMs: 1300,
+      heroStaggerRadius: 300,
+    },
+    /** خشم خاکستری (ash fury), under lowHpPct: hotter, faster, meaner. */
+    fury: { summonEveryMul: 0.65 },
   },
 
   /**
@@ -156,6 +223,45 @@ export const BALANCE = {
     homa: { chancePerRun: 0.1, afterMs: 22000 },
     fleeing: { combo: 12, chance: 0.3 },
     flameBow: { goldenStreak: 5, ms: 8000 },
+  },
+
+  /** Fire: arrows that pass through a brazier's flame. */
+  fire: {
+    /** Burn duration and tick cadence after a fire arrow hits. */
+    ms: 2000,
+    tickMs: 250,
+    /** Damage per tick (×BALANCE.slinger-agnostic; scaled by the omen's fireMul). */
+    dps: 14,
+  },
+
+  /** Kettle-pots on the floor: shoot them for a surprise. Contents are rolled per run. */
+  pots: {
+    hp: 1,
+    /** What a broken pot may hold (rolled once per pot when the run starts). */
+    loot: { coins: 0.5, triple: 0.28, heart: 0.22 } as const,
+    coinsScore: 200,
+    coinsPower: 0.06,
+  },
+
+  /** سه‌تیر: the next releases each loose a fan of three. */
+  triple: {
+    /** Max charges carried at once. */
+    max: 9,
+    /** Charges gained per pickup. */
+    charges: 3,
+    /** Side-arrow spread and their damage share (the centre arrow is untouched). */
+    spreadDeg: 9,
+    sideDamageMul: 0.7,
+  },
+
+  /** Elites: veterans of a later wave, marked in gold, worth more. */
+  elite: {
+    hpMul: 2.2,
+    speedMul: 1.1,
+    scaleMul: 1.14,
+    /** Guaranteed drop when one dies. */
+    drop: 'triple' as 'triple' | 'heart',
+    scoreBonus: 250,
   },
 
   /** The run's score (Result screen, Hero Card, best score). */

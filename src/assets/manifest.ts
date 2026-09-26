@@ -15,6 +15,7 @@ export type AtlasGroup = 'hero' | 'boss' | 'enemies' | 'propsui';
 export type PlaceholderKind =
   | 'bg' | 'card'
   | 'hero' | 'imp' | 'shield' | 'flyer' | 'boss'
+  | 'slinger' | 'bomber' | 'wraith' | 'rock' | 'boulder'
   | 'pillar' | 'arrow' | 'brazier' | 'banner' | 'pot'
   | 'bossbar' | 'heart' | 'btnPause' | 'toast' | 'comboBadge';
 
@@ -63,6 +64,26 @@ export const MANIFEST: readonly AssetDef[] = [
   char('flyer_up', 320, 'enemies', 'flyer', 'up', 0.5, 0.5),
   char('flyer_down', 320, 'enemies', 'flyer', 'down', 0.5, 0.5),
   char('flyer_hit', 320, 'enemies', 'flyer', 'hit', 0.5, 0.5),
+
+  // Slinger (سنگ‌انداز, 256)
+  char('slinger_walk_1', 256, 'enemies', 'slinger', 'walk1'),
+  char('slinger_walk_2', 256, 'enemies', 'slinger', 'walk2'),
+  char('slinger_throw', 256, 'enemies', 'slinger', 'throw'),
+  char('slinger_hit', 256, 'enemies', 'slinger', 'hit'),
+
+  // Bomber (نفتی‌دار, 320)
+  char('bomber_walk_1', 320, 'enemies', 'bomber', 'walk1'),
+  char('bomber_walk_2', 320, 'enemies', 'bomber', 'walk2'),
+  char('bomber_hit', 320, 'enemies', 'bomber', 'hit'),
+
+  // Wraith (شبح, 320)
+  char('wraith_walk_1', 320, 'enemies', 'wraith', 'walk1'),
+  char('wraith_walk_2', 320, 'enemies', 'wraith', 'walk2'),
+  char('wraith_hit', 320, 'enemies', 'wraith', 'hit'),
+
+  // Hazard projectiles
+  char('rock', 96, 'enemies', 'rock', 'idle', 0.5, 0.5),
+  char('boulder', 256, 'enemies', 'boulder', 'idle', 0.5, 0.5),
 
   // Boss (1024) — anchored at the knuckles, which rest on the top wall
   char('boss_idle', 1024, 'boss', 'boss', 'idle', 0.5, 0.86),
