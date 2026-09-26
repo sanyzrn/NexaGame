@@ -174,7 +174,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.powersUsed = this.goldenStreak = 0;
     this.goldenImpDone = this.homaBlessed = this.pendingStart = false;
     this.homaAt = -1;
-    this.hearts = BALANCE.hero.hearts;
+    this.hearts = services.settings.difficulty.hearts;
     this.combo = this.bestCombo = this.kills = this.bossDamage = 0;
     this.defeated = this.won = this.simorghDone = false;
     this.finisher = null;
@@ -186,11 +186,16 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.powerGainMul = 1;
     this.flameBowStreak = BALANCE.surprises.flameBow.goldenStreak;
     this.bonusScore = 0;
+    // Phaser reuses this scene object on restart: per-run caches must start empty, or arrows
+    // would test against the previous run's (destroyed) enemies and pots.
+    this.targets.length = 0;
+    this.fireZones.length = 0;
     setFireMul(1);
     // The omen of the day (same for the whole group; ?omen=<id> overrides, ?omen= turns it off).
     this.omen = pickOmen(new Date(), new URLSearchParams(window.location.search).get('omen'));
     this.era = currentEra();
-    this.rules = combineMods(this.era.mods, this.omen?.mods);
+    const diff = services.settings.difficulty;
+    this.rules = combineMods(combineMods(this.era.mods, this.omen?.mods), { enemySpeedMul: diff.enemySpeedMul, scoreMul: diff.scoreMul });
     applyEraArt(this, this.era);
 
     this.timeCtl = new TimeCtl(this);
@@ -211,7 +216,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.world.aimX = launch.x;
     this.world.aimY = launch.y;
 
-    this.waves = new WaveSystem(this, this, this.era.waves, this.era.hpScale);
+    this.waves = new WaveSystem(this, this, this.era.waves, this.era.hpScale * services.settings.difficulty.enemyHpMul);
     this.numbers = new DamageNumbers(this);
     this.projectiles = new ProjectileSystem(this, this.collider, () => this.allTargets(), fx);
     this.volley = new Volley(this, {
@@ -255,7 +260,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       },
       heal: (n) => {
         const before = this.hearts;
-        this.hearts = Math.min(BALANCE.hero.hearts, this.hearts + n);
+        this.hearts = Math.min(services.settings.difficulty.hearts, this.hearts + n);
         if (this.hearts !== before) this.hud.setHearts(this.hearts);
       },
       raiseChain: () => this.hud.group?.raiseChain(),
@@ -294,7 +299,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
         services.audio.play('pip');
       },
       onHeart: (x, y) => {
-        if (this.hearts < BALANCE.hero.hearts) {
+        if (this.hearts < services.settings.difficulty.hearts) {
           this.hearts++;
           this.hud.setHearts(this.hearts);
           services.audio.play('heartFill');

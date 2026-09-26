@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ERA_SKINS, MANIFEST_BY_KEY, SKINNABLE_KEYS } from '../../assets/manifest';
+import { ERA_COUNT, ERA_SKINS, MANIFEST_BY_KEY, SKINNABLE_KEYS } from '../../assets/manifest';
+import { DIFFICULTIES } from '../../data/difficulty';
 import { BALANCE } from '../../config/balance';
 import { ERAS, combineMods } from '../../data/eras';
 
@@ -28,6 +29,31 @@ describe('eras', () => {
         expect(def?.skinOf).toBe(key);
         expect([def?.w, def?.h, def?.ox, def?.oy]).toEqual([base?.w, base?.h, base?.ox, base?.oy]);
       }
+    }
+  });
+});
+
+describe('era timeline', () => {
+  it('has at least 16 eras including Pahlavi and the contemporary era', () => {
+    expect(ERAS.length).toBeGreaterThanOrEqual(16);
+    expect(ERAS.length).toBe(ERA_COUNT);
+    expect(ERAS.some((e) => e.id === 'pahlavi')).toBe(true);
+    expect(ERAS.some((e) => e.id === 'contemporary')).toBe(true);
+  });
+
+  it('gives era N the skin prefix eN', () => {
+    ERAS.forEach((e, i) => expect(e.skin).toBe(i === 0 ? null : `e${i + 1}`));
+  });
+});
+
+describe('difficulty', () => {
+  it('ramps up in order, with normal at the base tuning', () => {
+    const normal = DIFFICULTIES.find((d) => d.id === 'normal')!;
+    expect([normal.enemyHpMul, normal.enemySpeedMul, normal.bossHpMul, normal.scoreMul, normal.hearts]).toEqual([1, 1, 1, 1, 3]);
+    for (let i = 1; i < DIFFICULTIES.length; i++) {
+      expect(DIFFICULTIES[i].enemyHpMul).toBeGreaterThan(DIFFICULTIES[i - 1].enemyHpMul);
+      expect(DIFFICULTIES[i].scoreMul).toBeGreaterThan(DIFFICULTIES[i - 1].scoreMul);
+      expect(DIFFICULTIES[i].hearts).toBeLessThanOrEqual(DIFFICULTIES[i - 1].hearts);
     }
   });
 });

@@ -5,20 +5,24 @@ import { SCHOOLS, type School } from '../config/team';
 import { loadEraArt } from '../assets/eraSkins';
 import { ERAS } from '../data/eras';
 import { pickOmen } from '../data/omens';
-import { currentIndex, isUnlocked, selectEra, unlockedIndex } from '../systems/eraProgress';
+import { currentIndex, selectEra, unlockedIndex } from '../systems/eraProgress';
+import { DIFFICULTIES } from '../data/difficulty';
 import { readStartParam } from '../services/links';
 import { services } from '../services';
 import type { GroupMember } from '../services/GameService';
 import { avatarColor, avatarTex } from '../ui/avatar';
 import { Button } from '../ui/Button';
-import { dividerTex, gradientText, groupBannerTex, parchmentTex, schoolEmblemTex, shineTex, speakerTex } from '../ui/kit';
+import { dividerTex, gradientText, groupBannerTex, panelTex, parchmentTex, schoolEmblemTex, shineTex, speakerTex } from '../ui/kit';
 import { faNum } from '../utils/fa';
 import type { GameScene } from './GameScene';
 
-const LOGO_Y = 540;
-const SCHOOL_Y = 1050;
-const BUTTON_Y = 1420;
-const ERA_Y = BUTTON_Y + 228;
+const LOGO_Y = 500;
+const OMEN_Y = 872;
+const SCHOOL_Y = 1100;
+const BUTTON_Y = 1430;
+const INFO_Y = BUTTON_Y + 128;
+const MENU_Y = BUTTON_Y + 252;
+const BEST_Y = BUTTON_Y + 370;
 
 /** What each school's power does, in a line (the picker explains why a group needs all three). */
 const SCHOOL_LINES: Record<School, string> = {
@@ -63,7 +67,7 @@ export class TitleScene extends Phaser.Scene {
     this.buildSchools();
     this.buildButton();
     this.buildInvite();
-    this.buildEra();
+    this.buildMenu();
     this.buildOmen();
     this.buildEyes();
     this.buildSound(top);
@@ -210,8 +214,8 @@ export class TitleScene extends Phaser.Scene {
     const w = Math.min(920, Math.max(t.width, s.width) + 110);
     if (t.width > w - 90) t.setScale((w - 90) / t.width);
     if (s.width > w - 90) s.setScale((w - 90) / s.width);
-    const c = this.add.container(DESIGN_W / 2, 848, [this.add.image(0, 0, parchmentTex(this, w, 104)), t, s]).setAlpha(0);
-    this.tweens.add({ targets: c, alpha: 1, y: { from: 818, to: 848 }, duration: 600, delay: 1450, ease: 'Back.easeOut' });
+    const c = this.add.container(DESIGN_W / 2, OMEN_Y, [this.add.image(0, 0, parchmentTex(this, w, 104)), t, s]).setAlpha(0);
+    this.tweens.add({ targets: c, alpha: 1, y: { from: OMEN_Y - 30, to: OMEN_Y }, duration: 600, delay: 1450, ease: 'Back.easeOut' });
     this.tweens.add({ targets: c, angle: { from: -1, to: 1 }, duration: 2000, yoyo: true, repeat: -1, delay: 2050, ease: 'Sine.easeInOut' });
     this.layer.push(c);
   }
@@ -226,83 +230,125 @@ export class TitleScene extends Phaser.Scene {
     const t = this.add.text(0, 0, text, { fontFamily: FONT_FAMILY, fontSize: '32px', fontStyle: '900', color: '#3a1a08', rtl: true }).setOrigin(0.5);
     const w = Math.min(980, Math.round(t.width) + 110);
     if (t.width > w - 90) t.setScale((w - 90) / t.width);
-    const c = this.add.container(DESIGN_W / 2, BUTTON_Y + 345, [this.add.image(0, 0, parchmentTex(this, w, 96)), t]).setAlpha(0);
-    this.tweens.add({ targets: c, alpha: 1, y: { from: BUTTON_Y + 395, to: BUTTON_Y + 345 }, duration: 600, delay: 1700, ease: 'Back.easeOut' });
+    const c = this.add.container(DESIGN_W / 2, BEST_Y, [this.add.image(0, 0, parchmentTex(this, w, 96)), t]).setAlpha(0);
+    this.tweens.add({ targets: c, alpha: 1, y: { from: BEST_Y + 50, to: BEST_Y }, duration: 600, delay: 1700, ease: 'Back.easeOut' });
     this.tweens.add({ targets: c, angle: { from: -1.2, to: 1.2 }, duration: 1600, yoyo: true, repeat: -1, delay: 2300, ease: 'Sine.easeInOut' });
     this.layer.push(c);
   }
 
-  // ---------------------------------------------------------------- the eras
+  // ---------------------------------------------------------------- the menu
 
   /**
-   * سفر در زمان — the era plate: ◀ عصر ۲ از ۸ · اشکانی ▶. Arrows browse the whole timeline; an
-   * open era is chosen at once (the arena behind rebuilds in that era's skin), a locked one shows
-   * what it will be and how it opens, then the plate returns to the chosen era.
+   * Under «نبرد!»: one line saying where and how hard (era · year · difficulty), then two menu
+   * buttons — «زمان‌ها» opens the era wall (EraSelectScene), «سختی» the difficulty picker. Either
+   * choice rebuilds the arena behind the title, so the world always matches what was picked.
    */
-  private buildEra(): void {
-    const chosen = currentIndex();
-    let shown = chosen;
-    let revert: Phaser.Time.TimerEvent | null = null;
-    const w = 700;
-    const h = 108;
-    const bg = this.add.graphics();
-    bg.fillStyle(0x101834, 0.88).fillRoundedRect(-w / 2, -h / 2, w, h, 30);
-    bg.lineStyle(4, 0xf3c65a, 1).strokeRoundedRect(-w / 2, -h / 2, w, h, 30);
-    const title = this.add.text(0, -18, '', { fontFamily: FONT_FAMILY, fontSize: '34px', fontStyle: '900', color: '#fff0c8', rtl: true }).setOrigin(0.5);
-    const sub = this.add.text(0, 24, '', { fontFamily: FONT_FAMILY, fontSize: '24px', fontStyle: '700', color: '#b9c3e6', rtl: true }).setOrigin(0.5);
-    const arrow = (x: number, label: string) => this.add.text(x, 0, label, {
-      fontFamily: FONT_FAMILY, fontSize: '46px', fontStyle: '900', color: '#ffd24a',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    // RTL: the right arrow goes back in time, the left one forward.
-    const older = arrow(w / 2 - 44, '▶');
-    const newer = arrow(-w / 2 + 44, '◀');
-    const plate = this.add.container(DESIGN_W / 2, ERA_Y, [bg, title, sub, older, newer]).setAlpha(0);
+  private buildMenu(): void {
+    const era = ERAS[currentIndex()];
+    const diff = services.settings.difficulty;
+    const info = this.add.text(DESIGN_W / 2, INFO_Y, `عصر ${era.name} · ${era.year} · سختی: ${diff.name}`, {
+      fontFamily: FONT_FAMILY, fontSize: '30px', fontStyle: '900', color: '#ffe8b0', rtl: true, stroke: '#1a0e04', strokeThickness: 6,
+    }).setOrigin(0.5).setAlpha(0);
+    if (info.width > DESIGN_W - 80) info.setScale((DESIGN_W - 80) / info.width);
+    const eras = new Button(this, DESIGN_W / 2 + 232, MENU_Y, 440, 116, '⏳ زمان‌ها', () => this.openEras(), 'lapis');
+    const hard = new Button(this, DESIGN_W / 2 - 232, MENU_Y, 440, 116, `⚔ ${diff.name}`, () => this.openDifficulty(), 'red');
+    const items: Phaser.GameObjects.GameObject[] = [info, eras, hard];
+    // A newly opened era: the button glows with a «جدید» tag until the player visits the wall.
+    if (unlockedIndex() > currentIndex() && ERAS[unlockedIndex()]?.playable) {
+      const tag = this.add.text(DESIGN_W / 2 + 400, MENU_Y - 58, 'جدید!', {
+        fontFamily: FONT_FAMILY, fontSize: '26px', fontStyle: '900', color: '#3a1a04', rtl: true,
+        backgroundColor: '#ffd24a', padding: { left: 14, right: 14, top: 4, bottom: 6 },
+      }).setOrigin(0.5).setAngle(-8);
+      this.tweens.add({ targets: tag, scale: 1.15, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: eras, scale: 1.05, duration: 600, yoyo: true, repeat: -1, delay: 1800, ease: 'Sine.easeInOut' });
+      items.push(tag);
+    }
+    items.forEach((o, i) => {
+      const t = o as Phaser.GameObjects.Components.Alpha & Phaser.GameObjects.GameObject;
+      t.setAlpha(0);
+      this.tweens.add({ targets: t, alpha: 1, duration: 450, delay: 1300 + i * 80 });
+      this.layer.push(o);
+    });
+  }
 
-    const paint = () => {
-      const e = ERAS[shown];
-      const open = shown === chosen || isUnlocked(shown);
-      title.setText(`${open ? '' : '🔒 '}عصر ${faNum(shown + 1)} از ${faNum(ERAS.length)} · ${e.name}`).setColor(open ? '#fff0c8' : '#9aa3c0');
-      const how = !e.playable ? 'به‌زودی…' : `با شکست ${ERAS[shown - 1]?.bossName ?? ''} باز می‌شود`;
-      sub.setText(open ? `${e.year} · ${e.place}` : `${e.year} · ${how}`);
-      for (const t of [title, sub]) t.setScale(t.width > w - 150 ? (w - 150) / t.width : 1);
-      older.setAlpha(shown > 0 ? 1 : 0.25);
-      newer.setAlpha(shown < ERAS.length - 1 ? 1 : 0.25);
+  private openEras(): void {
+    if (this.started) return;
+    services.audio.unlock();
+    services.audio.play('ui');
+    this.setUiVisible(false);
+    this.scene.launch('Eras', {
+      onPick: (index: number) => this.switchEra(index),
+      onClose: () => this.setUiVisible(true),
+    });
+  }
+
+  /** The difficulty picker: four medallion rows on a parchment-rimmed panel over a dim veil. */
+  private openDifficulty(): void {
+    if (this.started) return;
+    services.audio.unlock();
+    services.audio.play('ui');
+    const cx = DESIGN_W / 2;
+    const cy = 980;
+    const current = services.settings.difficulty.id;
+    const veil = this.add.rectangle(0, 0, DESIGN_W, 1920, 0x04060f, 0.7).setOrigin(0).setInteractive();
+    const panel = this.add.image(cx, cy, panelTex(this, 900, 1040));
+    const title = gradientText(this.add.text(cx, cy - 420, 'درجهٔ سختی', {
+      fontFamily: FONT_FAMILY, fontSize: '64px', fontStyle: '900', rtl: true, stroke: '#2a1204', strokeThickness: 8,
+    }).setOrigin(0.5));
+    const parts: Phaser.GameObjects.GameObject[] = [veil, panel, title];
+    const close = () => {
+      this.tweens.add({ targets: parts, alpha: 0, duration: 160, onComplete: () => parts.forEach((p) => p.destroy()) });
     };
-    const browse = (dir: number) => {
-      if (this.started) return;
-      const next = shown + dir;
-      if (next < 0 || next >= ERAS.length) return;
-      shown = next;
-      services.audio.play('tick');
-      services.haptics.play('tick');
-      revert?.remove();
-      this.tweens.add({ targets: plate, scaleX: { from: 0.94, to: 1 }, duration: 180, ease: 'Back.easeOut' });
-      paint();
-      if (isUnlocked(shown)) {
-        if (shown !== chosen) this.switchEra(shown);
-        return;
-      }
-      revert = this.time.delayedCall(2600, () => {
-        shown = chosen;
-        paint();
+    veil.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, close);
+    DIFFICULTIES.forEach((d, i) => {
+      const y = cy - 270 + i * 190;
+      const on = d.id === current;
+      const g = this.add.graphics();
+      g.fillStyle(on ? 0x243056 : 0x141c38, 1).fillRoundedRect(cx - 390, y - 78, 780, 156, 36);
+      g.lineStyle(on ? 6 : 3, on ? 0xffd24a : 0x5a6488, 1).strokeRoundedRect(cx - 390, y - 78, 780, 156, 36);
+      g.fillStyle(d.color, 1).fillCircle(cx + 310, y, 46);
+      const hearts = this.add.text(cx + 310, y, faNum(d.hearts), { fontFamily: FONT_FAMILY, fontSize: '40px', fontStyle: '900', color: '#ffffff' }).setOrigin(0.5);
+      const heartTag = this.add.text(cx + 310, y + 60, 'جان', { fontFamily: FONT_FAMILY, fontSize: '20px', fontStyle: '900', color: '#b9c3e6', rtl: true }).setOrigin(0.5);
+      const name = this.add.text(cx + 230, y - 26, `${d.name}${on ? '  ✓' : ''}`, {
+        fontFamily: FONT_FAMILY, fontSize: '46px', fontStyle: '900', color: on ? '#ffe07a' : '#fff0c8', rtl: true,
+      }).setOrigin(1, 0.5);
+      const line = this.add.text(cx + 230, y + 30, d.line, { fontFamily: FONT_FAMILY, fontSize: '26px', fontStyle: '700', color: '#b9c3e6', rtl: true }).setOrigin(1, 0.5);
+      if (line.width > 580) line.setScale(580 / line.width);
+      const hit = this.add.zone(cx, y, 780, 156).setInteractive({ useHandCursor: true });
+      hit.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
+        services.haptics.play('tick');
+        if (d.id === current) {
+          close();
+          return;
+        }
+        services.settings.setDifficulty(d.id);
+        this.rebuild();
       });
-    };
-    older.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => browse(-1));
-    newer.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => browse(1));
-    paint();
-    this.tweens.add({ targets: plate, alpha: 1, y: { from: ERA_Y + 30, to: ERA_Y }, duration: 500, delay: 1350, ease: 'Back.easeOut' });
-    this.layer.push(plate);
-    // A newly opened era glints until it is visited.
-    if (unlockedIndex() > chosen) this.tweens.add({ targets: newer, scale: 1.3, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      parts.push(g, hearts, heartTag, name, line, hit);
+    });
+    parts.forEach((p) => {
+      const o = p as Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Alpha & Phaser.GameObjects.Components.Depth;
+      o.setDepth(50).setAlpha(0);
+      this.tweens.add({ targets: o, alpha: 1, duration: 200 });
+    });
+  }
+
+  private setUiVisible(on: boolean): void {
+    for (const o of this.layer) (o as Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Visible).setVisible(on);
+    this.eyeZone?.setVisible(on);
   }
 
   /** Rebuilds the arena behind the title in the chosen era's skin. */
   private switchEra(index: number): void {
     if (!selectEra(index)) return;
+    this.rebuild(loadEraArt(this, ERAS[index]));
+  }
+
+  /** The world behind the title is rebuilt for a new era or difficulty (fetching art first). */
+  private rebuild(art: Promise<boolean> = Promise.resolve(true)): void {
+    if (this.started) return;
     this.started = true;
     services.audio.play('whoosh');
-    // The era's real art (if any) is fetched while the title fades, then the arena rebuilds in it.
-    const art = loadEraArt(this, ERAS[index]);
     this.cameras.main.fadeOut(260, 6, 8, 20);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       void art.then(() => {
@@ -355,8 +401,9 @@ export class TitleScene extends Phaser.Scene {
 
   private async buildBest(): Promise<void> {
     const p = await services.game.getProfile();
-    if (!this.sys.isActive() || this.started || p.bestScore <= 0) return;
-    const t = this.add.text(DESIGN_W / 2, BUTTON_Y + 145, `رکورد تو: ${faNum(p.bestScore)}`, {
+    // The invite ribbon (opened from a friend's link) takes this spot when there is one.
+    if (!this.sys.isActive() || this.started || p.bestScore <= 0 || readStartParam(services.telegram.startParam)) return;
+    const t = this.add.text(DESIGN_W / 2, BEST_Y, `رکورد تو: ${faNum(p.bestScore)}`, {
       fontFamily: FONT_FAMILY, fontSize: '34px', fontStyle: '900', color: '#ffe8b0', rtl: true, stroke: '#2a1204', strokeThickness: 6,
     }).setOrigin(0.5).setAlpha(0);
     this.tweens.add({ targets: t, alpha: 1, duration: 500, delay: 1400 });
@@ -421,7 +468,7 @@ export class TitleScene extends Phaser.Scene {
   // ---------------------------------------------------------------- start
 
   private start(): void {
-    if (this.started) return;
+    if (this.started || this.scene.isActive('Eras')) return;
     this.started = true;
     services.audio.unlock();
     services.audio.play('battle');

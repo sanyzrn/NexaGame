@@ -50,7 +50,7 @@ export interface BossPoint {
  * sway, cloth wobble, glints). Pose changes cross-fade.
  */
 export class Boss {
-  readonly brain = new BossBrain({ ...BALANCE.boss, hp: Math.round(BALANCE.boss.hp * currentEra().bossHpScale) }, FINISHERS.arash);
+  readonly brain = new BossBrain({ ...BALANCE.boss, hp: Math.round(BALANCE.boss.hp * currentEra().bossHpScale * services.settings.difficulty.bossHpMul) }, FINISHERS.arash);
   /** Body + weak point, for arrows. */
   readonly target: Target;
   /** The golden barrier of the armor phase, for arrows. */
