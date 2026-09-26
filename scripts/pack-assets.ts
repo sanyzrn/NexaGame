@@ -215,8 +215,12 @@ function report(pack: PackFile, sources: Source[], outDir: string, log: (m: stri
     else initial += size(i.webp);
   }
   const have = new Set(sources.map((s) => s.def.key));
-  const missing = MANIFEST.filter((d) => !have.has(d.key)).map((d) => d.key);
-  log(`[assets] packed ${have.size}/${MANIFEST.length} assets` + (missing.length ? `; ${missing.length} will use placeholders` : ''));
+  const missing = MANIFEST.filter((d) => !have.has(d.key));
+  const placeholders = missing.filter((d) => !d.skinOf).length;
+  const testSkins = missing.length - placeholders;
+  log(`[assets] packed ${have.size}/${MANIFEST.length} assets`
+    + (placeholders ? `; ${placeholders} will use placeholders` : '')
+    + (testSkins ? `; ${testSkins} era skins will use recoloured test art` : ''));
   log(`[assets] first-paint art (WebP): ${(initial / 1024).toFixed(0)} KB, lazy-loaded: ${(lazy / 1024).toFixed(0)} KB`);
 }
 

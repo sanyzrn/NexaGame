@@ -6,6 +6,7 @@ import { GameScene } from './scenes/GameScene';
 import { HudScene } from './scenes/HudScene';
 import { CardScene } from './scenes/CardScene';
 import { PauseScene } from './scenes/PauseScene';
+import { TimeJumpScene } from './scenes/TimeJumpScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { ResultScene } from './scenes/ResultScene';
 import { TitleScene } from './scenes/TitleScene';
@@ -76,7 +77,7 @@ async function start(): Promise<void> {
     render: { antialias: true, powerPreference: 'high-performance' },
     disableContextMenu: true,
     banner: false,
-    scene: [BootScene, PreloadScene, GameScene, HudScene, TitleScene, ResultScene, CardScene, PauseScene],
+    scene: [BootScene, PreloadScene, GameScene, HudScene, TitleScene, ResultScene, CardScene, PauseScene, TimeJumpScene],
   });
   // The canvas's first frame replaces the DOM splash; from here the game owns the screen.
   game.events.once(Phaser.Core.Events.READY, () => {

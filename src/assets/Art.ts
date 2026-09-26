@@ -28,14 +28,42 @@ class ArtRegistry {
   private readonly anchors = new Map<string, Anchor>();
   /** Fires (with the key) whenever real art is registered late (lazy atlas groups). */
   readonly onChange = new Signal<string>();
+  /** Era test skins (recoloured copies) → the base key they copy, whose anchor they share. */
+  private readonly cloneOf = new Map<string, string>();
+  private skin: string | null = null;
   readonly missing: string[] = [];
+  /** Era skins drawn as recoloured test art (their PNG is not in assets-src yet). */
+  readonly testSkins: string[] = [];
 
   register(key: string, ref: TexRef, real: boolean): void {
     this.refs.set(key, ref);
     if (real) this.real.add(key);
     else this.real.delete(key);
+    this.cloneOf.delete(key);
     this.anchors.clear();
     if (real) this.onChange.emit(key);
+  }
+
+  unregister(key: string): void {
+    this.refs.delete(key);
+    this.real.delete(key);
+    this.cloneOf.delete(key);
+    this.anchors.clear();
+  }
+
+  registerClone(key: string, ref: TexRef, base: string): void {
+    this.register(key, ref, false);
+    this.cloneOf.set(key, base);
+  }
+
+  /** The era skin prefix (e.g. 'e2'), or null for the first era's own art. Set before building a scene. */
+  get currentSkin(): string | null {
+    return this.skin;
+  }
+
+  setSkin(prefix: string | null): void {
+    this.skin = prefix;
+    this.anchors.clear();
   }
 
   has(key: string): boolean {
@@ -47,8 +75,19 @@ class ArtRegistry {
     return this.real.has(key);
   }
 
-  /** The key that is actually drawn for `key` (a real fallback pose wins over a placeholder). */
+  /** The key that is actually drawn for `key`: the era's skin first, then a real fallback pose. */
   resolve(key: string): string {
+    if (this.skin !== null) {
+      const s = `${this.skin}_${key}`;
+      if (this.real.has(s)) return s;
+      const fallback = POSE_FALLBACK[key];
+      if (fallback !== undefined && this.real.has(`${this.skin}_${fallback}`)) return `${this.skin}_${fallback}`;
+      if (this.refs.has(s)) return s;
+    }
+    return this.baseResolve(key);
+  }
+
+  private baseResolve(key: string): string {
     if (this.real.has(key)) return key;
     const fallback = POSE_FALLBACK[key];
     return fallback !== undefined && this.real.has(fallback) ? fallback : key;
@@ -65,8 +104,10 @@ class ArtRegistry {
     const drawn = this.resolve(key);
     let a = this.anchors.get(drawn);
     if (!a) {
-      const def = MANIFEST_BY_KEY.get(drawn);
-      const override = this.real.has(drawn) ? ART_ANCHORS[drawn] : undefined;
+      const base = this.cloneOf.get(drawn);
+      const src = base !== undefined ? this.baseResolve(base) : drawn;
+      const def = MANIFEST_BY_KEY.get(src);
+      const override = this.real.has(src) ? ART_ANCHORS[src] : undefined;
       a = {
         ox: override?.ox ?? def?.ox ?? 0.5,
         oy: override?.oy ?? def?.oy ?? 0.5,

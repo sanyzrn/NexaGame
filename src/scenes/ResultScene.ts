@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { ERAS, type EraDef } from '../data/eras';
+import { selectEra } from '../systems/eraProgress';
 import { DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
 import type { School } from '../config/team';
@@ -38,6 +40,10 @@ export interface ResultData {
   moment: string | null;
   /** Opened from a friend's challenge link: their name and score to beat. */
   challenge: { name: string; score: number } | null;
+  /** The era this run was fought in. */
+  era: EraDef;
+  /** A victory opened this next era (playable): the time jump can go there. */
+  nextEra: EraDef | null;
 }
 
 const PW = 960;
@@ -157,7 +163,7 @@ export class ResultScene extends Phaser.Scene {
     add(gradientText(this.add.text(cx, top + 2, won ? 'پیروزی لشکر!' : 'پایان نبرد', {
       fontFamily: FONT_FAMILY, fontSize: '66px', fontStyle: '900', rtl: true,
     }).setOrigin(0.5), won ? ['#5a2a04', '#3a1a02', '#2a1002'] : ['#fff4e0', '#ffd0a0', '#f0a060']));
-    const sub = won ? 'دیو سپید در برابر لشکر زانو زد.' : 'دیو هنوز ایستاده؛ لشکر به تیرهای تو امید دارد.';
+    const sub = won ? `${this.d.era.bossName} در برابر لشکر زانو زد.` : 'دیو هنوز ایستاده؛ لشکر به تیرهای تو امید دارد.';
     this.subText = add(this.add.text(cx, top + 100, sub, {
       fontFamily: FONT_FAMILY, fontSize: '32px', color: '#f3dca0', rtl: true,
     }).setOrigin(0.5));
@@ -412,7 +418,10 @@ export class ResultScene extends Phaser.Scene {
   private showButtons(): void {
     const cx = DESIGN_W / 2;
     const bottom = PY + PH / 2;
-    const again = new Button(this, cx, bottom - 250, 540, 124, 'دوباره', () => this.playAgain(), 'gold');
+    const next = this.d.nextEra;
+    const again = next
+      ? new Button(this, cx, bottom - 250, 600, 124, 'سفر در زمان ⏳', () => this.timeJump(next), 'gold')
+      : new Button(this, cx, bottom - 250, 540, 124, 'دوباره', () => this.playAgain(), 'gold');
     const card = new Button(this, cx + 205, bottom - 95, 390, 108, 'کارت افتخار', () => this.openCard(), 'lapis');
     const invite = new Button(this, cx - 205, bottom - 95, 390, 108, 'دعوت هم‌رزم', () => void this.invite(), 'red');
     [again, card, invite].forEach((b, i) => {
@@ -432,6 +441,21 @@ export class ResultScene extends Phaser.Scene {
       this.scene.stop('Card');
       this.scene.stop('Hud');
       this.scene.start('Game', { title: false });
+    });
+  }
+
+  /** The next era is open: the time-jump cinematic carries the Derafsh down the centuries. */
+  private timeJump(next: EraDef): void {
+    if (this.leaving) return;
+    this.leaving = true;
+    selectEra(ERAS.indexOf(next));
+    services.audio.play('whoosh');
+    this.cameras.main.fadeOut(380, 10, 6, 20);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.stop('Card');
+      this.scene.stop('Hud');
+      this.scene.stop('Game');
+      this.scene.start('TimeJump', { from: this.d.era, to: next });
     });
   }
 

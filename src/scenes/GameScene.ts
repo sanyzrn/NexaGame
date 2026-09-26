@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
 import { ensureAtlas } from '../assets/lazy';
+import { applyEraArt } from '../assets/eraSkins';
 import { setPlaceholderLabels } from '../assets/placeholders';
 import { BALANCE } from '../config/balance';
 import { DEPTH, DESIGN_H, DESIGN_W } from '../config/display';
@@ -9,7 +10,8 @@ import { ARENA } from '../data/arena';
 import { HERO, PILLAR } from '../data/entities';
 import { FINISHERS } from '../data/finishers';
 import { Moments } from '../data/moments';
-import { OMENS, pickOmen, applyOmenToWave, type OmenDef } from '../data/omens';
+import { combineMods, type EraDef } from '../data/eras';
+import { OMENS, pickOmen, applyOmenToWave, type OmenDef, type OmenMods } from '../data/omens';
 import { DebugOverlay } from '../debug/DebugOverlay';
 import { Boss } from '../entities/Boss';
 import { Decor } from '../entities/Decor';
@@ -34,6 +36,7 @@ import { Volley } from '../systems/Volley';
 import { Powers } from '../systems/Powers';
 import { PowerMeter } from '../systems/powerMeter';
 import { Surprises } from '../systems/Surprises';
+import { completeEra, currentEra, unlockedIndex } from '../systems/eraProgress';
 import { readStartParam } from '../services/links';
 import { WaveSystem, type WaveInfo } from '../systems/WaveSystem';
 import { DamageNumbers } from '../ui/DamageNumbers';
@@ -141,6 +144,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private pots: Pot[] = [];
   private readonly fireZones: { x: number; y: number; r: number }[] = [];
   private omen: OmenDef | null = null;
+  /** The era being fought in (art skin, waves, rule, boss name). */
+  private era!: EraDef;
+  /** The era's rule combined with the day's omen. */
+  private rules: OmenMods = {};
   private readonly moments = new Moments();
   private tripleShots = 0;
   private staggerLeft = 0;
@@ -182,6 +189,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     setFireMul(1);
     // The omen of the day (same for the whole group; ?omen=<id> overrides, ?omen= turns it off).
     this.omen = pickOmen(new Date(), new URLSearchParams(window.location.search).get('omen'));
+    this.era = currentEra();
+    this.rules = combineMods(this.era.mods, this.omen?.mods);
+    applyEraArt(this, this.era);
 
     this.timeCtl = new TimeCtl(this);
     // Camera moves (intro push-in, the finisher's flight) never show past the arena's edges.
@@ -201,7 +211,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.world.aimX = launch.x;
     this.world.aimY = launch.y;
 
-    this.waves = new WaveSystem(this, this);
+    this.waves = new WaveSystem(this, this, this.era.waves, this.era.hpScale);
     this.numbers = new DamageNumbers(this);
     this.projectiles = new ProjectileSystem(this, this.collider, () => this.allTargets(), fx);
     this.volley = new Volley(this, {
@@ -318,11 +328,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       .setScrollFactor(0).setDepth(DEPTH.flash - 1).setBlendMode(Phaser.BlendModes.ADD)
       .setDisplaySize(DESIGN_W + 80, DESIGN_H + 80).setAlpha(0);
 
-    // The omen's colour grade over the whole run (and the title behind it).
-    if (this.omen) {
-      const g = this.omen.grade;
-      this.atmosphere.applyOmen(vGradientTex(this, 'ui_grad_omen', g.top, g.mid, g.bottom), g.alpha, 900);
-    }
+    // The era's colour grade (or else the omen's) over the whole run and the title behind it.
+    const grade = this.runGrade();
+    if (grade) this.atmosphere.applyOmen(vGradientTex(this, 'ui_grad_omen', grade.top, grade.mid, grade.bottom), grade.alpha, 900);
 
     this.simorgh = new Simorgh(this, this.timeCtl, {
       bow: () => launch,
@@ -565,7 +573,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.aim.enabled = true;
     this.applyOmen();
     // Rare: the Homa may glide over this run.
-    const homaGuaranteed = this.omen?.mods.homaGuaranteed === true;
+    const homaGuaranteed = this.rules.homaGuaranteed === true;
     if ((homaGuaranteed || (FEEL.surprises.homa.enabled && Math.random() < BALANCE.surprises.homa.chancePerRun))) {
       this.homaAt = BALANCE.surprises.homa.afterMs;
     }
@@ -587,16 +595,15 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     });
   }
 
-  /** The omen of the day bends the run (never breaks it). */
+  /** The era's rule and the omen of the day bend the run (never break it). */
   private applyOmen(): void {
     const o = this.omen;
-    if (!o) return;
-    const m = o.mods;
+    const m = this.rules;
     setFireMul(m.fireMul ?? 1);
     this.decor.fireMul = m.fireMul ?? 1;
     this.waves.mods = {
       speedMul: m.enemySpeedMul,
-      filter: (q) => applyOmenToWave(q, o),
+      filter: o ? (q) => applyOmenToWave(q, o) : undefined,
     };
     this.world.quiet = m.quietEnemies === true;
     this.projectiles.driftDegPerSec = m.arrowDriftDegPerSec ?? 0;
@@ -605,8 +612,27 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if (m.chainStart) {
       for (let i = 0; i < m.chainStart; i++) this.hud.group?.raiseChain();
     }
-    this.hud.showToast(`فال امروز: ${o.name}`, o.line);
-    services.audio.play('omen');
+    // A later era announces itself first; the omen follows once that toast has gone.
+    const eraToast = this.era.skin !== null;
+    if (eraToast) this.hud.showToast(`عصر ${this.era.name} · ${this.era.place}`, this.era.rule);
+    if (o) {
+      this.time.delayedCall(eraToast ? 2400 : 0, () => {
+        this.hud.showToast(`فال امروز: ${o.name}`, o.line);
+        services.audio.play('omen');
+      });
+    }
+  }
+
+  /** A victory opens the next era; returned only the first time (then the time jump is offered). */
+  private openNextEra(): EraDef | null {
+    const before = unlockedIndex();
+    const next = completeEra(this.era);
+    return next && unlockedIndex() > before ? next : null;
+  }
+
+  /** The colour grade over the run: the era's own light first, else the day's omen. */
+  private runGrade(): { top: string; mid: string; bottom: string; alpha: number } | null {
+    return this.era.grade ?? this.omen?.grade ?? null;
   }
 
   update(_time: number, delta: number): void {
@@ -775,7 +801,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       fx.ring(x, y, 0xffb070, 0.3, 6, 900);
     });
     boss.onIntroBar.add(() => {
-      this.hud.showBossBar('دیو سپید');
+      this.hud.showBossBar(this.era.bossName);
       this.hud.setBossHp(1);
     });
     boss.onIntroDone.add(() => {
@@ -816,7 +842,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.hud.bigTitle('خشم خاکستری');
       services.audio.play('battle');
       services.haptics.play('heavy');
-      this.time.delayedCall(1500, () => this.atmosphere.applyOmen(this.omen ? 'ui_grad_omen' : null, this.omen?.grade.alpha ?? 0, 900));
+      this.time.delayedCall(1500, () => this.atmosphere.applyOmen(this.runGrade() ? 'ui_grad_omen' : null, this.runGrade()?.alpha ?? 0, 900));
     });
     boss.onBarrier.add(({ kind, x, y }) => {
       if (kind === 'form') {
@@ -1278,7 +1304,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private bomberBoom(e: Enemy, x: number, y: number): void {
     const B = BALANCE.enemies.bomber.boom;
     const fx = this.fx;
-    const mul = this.omen?.mods.fireMul ?? 1;
+    const mul = this.rules.fireMul ?? 1;
     const radius = B.radius * (1 + (mul - 1) * 0.25);
     services.audio.play('boom');
     services.haptics.play('heavy');
@@ -1643,7 +1669,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     let isNewBest = false;
     // The run's little bonuses (pots, elites) and the omen's score multiplier.
     if (this.bonusScore > 0) stats.score += this.bonusScore;
-    const scoreMul = this.omen?.mods.scoreMul ?? 1;
+    const scoreMul = this.rules.scoreMul ?? 1;
     if (scoreMul !== 1) stats.score = Math.round(stats.score * scoreMul);
     try {
       const res = await services.game.submitRun({
@@ -1668,6 +1694,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       homa: this.homaBlessed,
       omen: this.omen ? { name: this.omen.name, line: this.omen.line } : null,
       moment: this.moments.bestMoment(),
+      era: this.era,
+      nextEra: won ? this.openNextEra() : null,
       challenge: (() => {
         const p = readStartParam(services.telegram.startParam);
         return p?.kind === 'challenge' ? { name: p.name, score: p.score } : null;

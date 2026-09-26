@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { currentEra } from '../systems/eraProgress';
 import { Art } from '../assets/Art';
 import { MANIFEST_BY_KEY } from '../assets/manifest';
 import { BALANCE } from '../config/balance';
@@ -49,7 +50,7 @@ export interface BossPoint {
  * sway, cloth wobble, glints). Pose changes cross-fade.
  */
 export class Boss {
-  readonly brain = new BossBrain(BALANCE.boss, FINISHERS.arash);
+  readonly brain = new BossBrain({ ...BALANCE.boss, hp: Math.round(BALANCE.boss.hp * currentEra().bossHpScale) }, FINISHERS.arash);
   /** Body + weak point, for arrows. */
   readonly target: Target;
   /** The golden barrier of the armor phase, for arrows. */

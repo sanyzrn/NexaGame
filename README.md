@@ -161,6 +161,15 @@ See [assets-src/README.md](assets-src/README.md) for the exact filenames, sizes 
 - **Collision shapes never come from images.** Tune them in `src/data/entities.ts` (hitboxes, relative to the anchor, in design px) and `src/data/arena.ts` (walls, lines, pillar positions, hero, decor, the White Div's spot), then check them with the debug overlay.
 - New art keys go in `src/assets/manifest.ts` (+ a placeholder painter in `src/assets/placeholders.ts`).
 
+## Eras (سفر در زمان)
+
+The Derafsh travels through history: Achaemenid → Parthian → Sasanian → Seljuk → Safavid → Qajar → today → tomorrow. Beating an era's boss opens the next one; a time-jump cinematic carries the player there, and the title screen has an era plate (◀ ▶) to pick any open era.
+
+- Eras are data in `src/data/eras.ts`: names, year, place, boss name, one signature rule (omen-style modifiers, combined with the day's omen), enemy/boss hp scales and waves. Eras 1–2 are playable; the rest show as «به‌زودی» on the timeline.
+- Each era re-skins every sprite through `Art` with a prefix: `assets-src/e2_hero_idle.png` replaces `hero_idle` in era 2, with no code changes. Missing era art is shown as recoloured **test art** generated at runtime from the first era's art (only for the era being played).
+- The full art brief (file names, sizes, prompts for every era) is in [docs/ERA_ASSETS.md](docs/ERA_ASSETS.md); the idea bank is [docs/IDEAS.md](docs/IDEAS.md).
+- `?era=2` (or `?era=parthian`) plays an era without unlocking it.
+
 ## Tuning: `src/config/balance.ts`
 
 All gameplay numbers live in `src/config/balance.ts`. Times are in ms and distances in design px (the canvas is 1080×1920).

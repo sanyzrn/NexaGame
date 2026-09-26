@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { BALANCE } from '../config/balance';
 import { ARENA } from '../data/arena';
-import { WAVES, scheduleWave, type ScheduledSpawn } from '../data/waves';
+import { WAVES, scheduleWave, type ScheduledSpawn, type WaveDef } from '../data/waves';
 import { Enemy, type EnemyHooks, type EnemyWorld, type SpawnOptions } from '../entities/Enemy';
 import { Signal } from '../utils/Signal';
 
@@ -30,7 +30,7 @@ export class WaveSystem {
   /** Every wave of the level is done. */
   readonly onAllCleared = new Signal<WaveInfo>();
   readonly enemies: Enemy[] = [];
-  readonly info: WaveInfo = { index: -1, total: Math.min(WAVES.length, BALANCE.boss.afterWave) };
+  readonly info: WaveInfo;
   /** The omen of the day, applied to spawns (set by GameScene before start). */
   mods: { speedMul?: number; filter?: (q: ScheduledSpawn[]) => ScheduledSpawn[] } = {};
 
@@ -41,7 +41,14 @@ export class WaveSystem {
   private running = false;
   private stopped = true;
 
-  constructor(private readonly scene: Phaser.Scene, private readonly hooks: EnemyHooks) {
+  /** `waves`: the era's waves; `hpScale`: the era's enemy hp multiplier. */
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly hooks: EnemyHooks,
+    private readonly waves: readonly WaveDef[] = WAVES,
+    private readonly hpScale = 1,
+  ) {
+    this.info = { index: -1, total: Math.min(waves.length, BALANCE.boss.afterWave) };
     for (let i = 0; i < POOL; i++) this.enemies.push(new Enemy(scene, hooks));
   }
 
@@ -95,7 +102,7 @@ export class WaveSystem {
     for (let i = 0; i < count; i++) {
       const pt = points[(start + i) % points.length];
       const type = types[i % types.length];
-      this.freeEnemy().spawn(type, pt.x + Phaser.Math.Between(-30, 30), 1, pt.y, { speedMul: this.mods.speedMul });
+      this.freeEnemy().spawn(type, pt.x + Phaser.Math.Between(-30, 30), this.hpScale, pt.y, { speedMul: this.mods.speedMul });
     }
   }
 
@@ -127,7 +134,7 @@ export class WaveSystem {
   private begin(): void {
     const info = this.info;
     info.index++;
-    let q = scheduleWave(WAVES[info.index], Math.random);
+    let q = scheduleWave(this.waves[info.index], Math.random);
     if (this.mods.filter) q = this.mods.filter(q);
     this.queue = q;
     this.next = 0;
@@ -148,6 +155,6 @@ export class WaveSystem {
   private spawn(s: ScheduledSpawn): void {
     const m = BALANCE.waves.sideMargin;
     const x = ARENA.walls.left + m + s.x * (ARENA.walls.right - ARENA.walls.left - m * 2);
-    this.freeEnemy().spawn(s.type, x, 1, undefined, { elite: s.elite, speedMul: this.mods.speedMul });
+    this.freeEnemy().spawn(s.type, x, this.hpScale, undefined, { elite: s.elite, speedMul: this.mods.speedMul });
   }
 }
