@@ -1,18 +1,28 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
 import { createFxTextures } from '../assets/fxTextures';
-import { LAZY_ATLAS_GROUPS, MANIFEST, MANIFEST_BY_KEY, type PackFile } from '../assets/manifest';
+import { ERA_SKINS, LAZY_ATLAS_GROUPS, MANIFEST, MANIFEST_BY_KEY, type PackFile } from '../assets/manifest';
 import { createPlaceholder } from '../assets/placeholders';
 import { COLORS, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { services } from '../services';
+import { currentEra } from '../systems/eraProgress';
 import { buttonTex, dimTex, gradientText, panelTex } from '../ui/kit';
 
-/** An atlas sheet is lazy when it belongs entirely to a lazy group (fetched later, not at boot). */
-function isLazySheet(a: PackFile['atlases'][number]): boolean {
+/**
+ * An atlas sheet is lazy when it belongs entirely to a lazy group (fetched later, not at boot).
+ * The era being played is the exception: its skins are part of this player's first paint.
+ */
+function isLazySheet(a: PackFile['atlases'][number], eraGroup: string | undefined): boolean {
   return a.frames.length > 0 && a.frames.every((f) => {
     const group = MANIFEST_BY_KEY.get(f)?.atlas;
-    return group !== undefined && group !== null && (LAZY_ATLAS_GROUPS as readonly string[]).includes(group);
+    return group !== undefined && group !== null && group !== eraGroup && (LAZY_ATLAS_GROUPS as readonly string[]).includes(group);
   });
+}
+
+/** Atlas group of the current era's skins (undefined for the first era). */
+function currentEraGroup(): string | undefined {
+  const skin = currentEra().skin;
+  return ERA_SKINS.find((e) => e.prefix === skin)?.atlas;
 }
 
 /** Loads real art needed for the first paint, generates placeholders for the rest, shows progress. */
@@ -29,8 +39,9 @@ export class PreloadScene extends Phaser.Scene {
 
     const base = 'assets/';
     const v = `?v=${pack.version}`;
+    const eraGroup = currentEraGroup();
     for (const a of pack.atlases) {
-      if (isLazySheet(a)) continue; // boss art: fetched in the background while the title is up
+      if (isLazySheet(a, eraGroup)) continue; // boss art: fetched in the background while the title is up
       const texture = services.caps.webp ? a.webp : a.png;
       this.load.atlas(`atlas:${a.name}`, base + texture + v, base + a.json + v);
     }
@@ -48,11 +59,12 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     const pack = this.registry.get('pack') as PackFile;
+    const eraGroup = currentEraGroup();
     const lazyKeys = new Set(MANIFEST.filter((d) => d.lazy).map((d) => d.key));
 
     for (const a of pack.atlases) {
       const key = `atlas:${a.name}`;
-      if (this.failed.has(key) || !this.textures.exists(key) || isLazySheet(a)) continue;
+      if (this.failed.has(key) || !this.textures.exists(key) || isLazySheet(a, eraGroup)) continue;
       for (const frame of a.frames) Art.register(frame, { texture: key, frame }, true);
     }
     for (const img of pack.images) {
@@ -65,6 +77,8 @@ export class PreloadScene extends Phaser.Scene {
       if (Art.has(def.key)) continue;
       // card_bg exists on disk and HeroCard renders it only after ensureLazy resolves.
       if (def.lazy && pack.images.some((i) => i.key === def.key)) continue;
+      // Missing era skins become recoloured test art only when that era is played (applyEraArt).
+      if (def.skinOf) continue;
       // Lazy atlas frames (the boss) get their placeholder NOW too: the Boss entity is built the
       // moment the game scene boots, and the real texture swaps in when the lazy load lands.
       createPlaceholder(this, def);

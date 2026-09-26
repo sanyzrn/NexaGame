@@ -9,7 +9,8 @@
  */
 
 /** Atlas a file is packed into. `null` = standalone image (large, opaque backgrounds). */
-export type AtlasGroup = 'hero' | 'boss' | 'enemies' | 'propsui';
+export type AtlasGroup = 'hero' | 'boss' | 'enemies' | 'propsui'
+  | 'era2' | 'era3' | 'era4' | 'era5' | 'era6' | 'era7' | 'era8';
 
 /** How the placeholder painter should draw this asset while the real PNG is missing. */
 export type PlaceholderKind =
@@ -32,6 +33,8 @@ export interface AssetDef {
   /** Not needed for the first screen; loaded later (e.g. the share card background). */
   lazy?: boolean;
   ph: { kind: PlaceholderKind; pose?: string };
+  /** An era skin of this base key: while its PNG is missing, a recoloured copy of the base is shown. */
+  skinOf?: string;
 }
 
 const char = (key: string, size: number, atlas: AtlasGroup, kind: PlaceholderKind, pose: string, ox = 0.5, oy = 0.9): AssetDef =>
@@ -40,7 +43,7 @@ const char = (key: string, size: number, atlas: AtlasGroup, kind: PlaceholderKin
 const ui = (key: string, w: number, h: number, kind: PlaceholderKind, pose?: string): AssetDef =>
   ({ key, w, h, ox: 0.5, oy: 0.5, atlas: 'propsui', alpha: true, ph: { kind, pose } });
 
-export const MANIFEST: readonly AssetDef[] = [
+const BASE: readonly AssetDef[] = [
   // Background
   { key: 'bg_arena_01', w: 1080, h: 1920, ox: 0, oy: 0, atlas: null, alpha: false, ph: { kind: 'bg' } },
 
@@ -109,6 +112,45 @@ export const MANIFEST: readonly AssetDef[] = [
   { key: 'card_bg', w: 1080, h: 1920, ox: 0, oy: 0, atlas: null, alpha: false, lazy: true, ph: { kind: 'card' } },
 ];
 
+/**
+ * Keys an era may re-skin. An era with skin prefix `e2` looks for `assets-src/e2_<key>.png`
+ * (same size and anchor as the base); gameplay code keeps using the base key.
+ */
+export const SKINNABLE_KEYS: readonly string[] = [
+  'bg_arena_01',
+  'hero_idle', 'hero_draw', 'hero_full', 'hero_hurt',
+  'imp_walk_1', 'imp_walk_2', 'imp_hit',
+  'shield_walk_1', 'shield_walk_2', 'shield_hit',
+  'flyer_up', 'flyer_down', 'flyer_hit',
+  'slinger_walk_1', 'slinger_walk_2', 'slinger_throw', 'slinger_hit',
+  'bomber_walk_1', 'bomber_walk_2', 'bomber_hit',
+  'wraith_walk_1', 'wraith_walk_2', 'wraith_hit',
+  'rock', 'boulder',
+  'boss_idle', 'boss_roar', 'boss_stunned',
+  'pillar_01', 'banner', 'brazier', 'pot', 'arrow',
+];
+
+/** Era skin prefixes that have assets (each packs into its own atlas group). */
+export const ERA_SKINS: readonly { prefix: string; atlas: AtlasGroup }[] = [
+  { prefix: 'e2', atlas: 'era2' },
+  { prefix: 'e3', atlas: 'era3' },
+  { prefix: 'e4', atlas: 'era4' },
+  { prefix: 'e5', atlas: 'era5' },
+  { prefix: 'e6', atlas: 'era6' },
+  { prefix: 'e7', atlas: 'era7' },
+  { prefix: 'e8', atlas: 'era8' },
+];
+
+const BASE_BY_KEY = new Map(BASE.map((d) => [d.key, d]));
+
+export const MANIFEST: readonly AssetDef[] = [
+  ...BASE,
+  ...ERA_SKINS.flatMap(({ prefix, atlas }) => SKINNABLE_KEYS.map((key): AssetDef => {
+    const b = BASE_BY_KEY.get(key)!;
+    return { ...b, key: `${prefix}_${key}`, atlas: b.atlas === null ? null : atlas, skinOf: key };
+  })),
+];
+
 export const MANIFEST_BY_KEY: ReadonlyMap<string, AssetDef> = new Map(MANIFEST.map((d) => [d.key, d]));
 
 /**
@@ -116,7 +158,11 @@ export const MANIFEST_BY_KEY: ReadonlyMap<string, AssetDef> = new Map(MANIFEST.m
  * fetched in the background (the boss art while the title screen is up) or on first use. If the
  * fetch fails, the runtime placeholder keeps working, so the game never blocks on them.
  */
-export const LAZY_ATLAS_GROUPS: readonly AtlasGroup[] = ['boss'];
+export const LAZY_ATLAS_GROUPS: readonly AtlasGroup[] = [
+  'boss',
+  // Era skins: only the era being played is fetched (Preload loads the current era at boot).
+  'era2', 'era3', 'era4', 'era5', 'era6', 'era7', 'era8',
+];
 
 /** Shape of public/assets/pack.json, written by the packer and read by Preload. */
 export interface PackFile {

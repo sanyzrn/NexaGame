@@ -21,7 +21,7 @@ export interface BossHitResult {
   blocked: boolean;
 }
 
-type BossTuning = typeof BALANCE.boss;
+type BossTuning = Omit<typeof BALANCE.boss, 'hp'> & { hp: number };
 
 export interface FinisherTuning {
   triggerPct: number;

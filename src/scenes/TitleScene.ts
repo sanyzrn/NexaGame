@@ -2,7 +2,10 @@ import Phaser from 'phaser';
 import { CALLIGRAPHY_FONT, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
 import { SCHOOLS, type School } from '../config/team';
+import { loadEraArt } from '../assets/eraSkins';
+import { ERAS } from '../data/eras';
 import { pickOmen } from '../data/omens';
+import { currentIndex, isUnlocked, selectEra, unlockedIndex } from '../systems/eraProgress';
 import { readStartParam } from '../services/links';
 import { services } from '../services';
 import type { GroupMember } from '../services/GameService';
@@ -15,6 +18,7 @@ import type { GameScene } from './GameScene';
 const LOGO_Y = 540;
 const SCHOOL_Y = 1050;
 const BUTTON_Y = 1420;
+const ERA_Y = BUTTON_Y + 228;
 
 /** What each school's power does, in a line (the picker explains why a group needs all three). */
 const SCHOOL_LINES: Record<School, string> = {
@@ -59,6 +63,7 @@ export class TitleScene extends Phaser.Scene {
     this.buildSchools();
     this.buildButton();
     this.buildInvite();
+    this.buildEra();
     this.buildOmen();
     this.buildEyes();
     this.buildSound(top);
@@ -221,10 +226,90 @@ export class TitleScene extends Phaser.Scene {
     const t = this.add.text(0, 0, text, { fontFamily: FONT_FAMILY, fontSize: '32px', fontStyle: '900', color: '#3a1a08', rtl: true }).setOrigin(0.5);
     const w = Math.min(980, Math.round(t.width) + 110);
     if (t.width > w - 90) t.setScale((w - 90) / t.width);
-    const c = this.add.container(DESIGN_W / 2, BUTTON_Y + 250, [this.add.image(0, 0, parchmentTex(this, w, 96)), t]).setAlpha(0);
-    this.tweens.add({ targets: c, alpha: 1, y: { from: BUTTON_Y + 300, to: BUTTON_Y + 250 }, duration: 600, delay: 1700, ease: 'Back.easeOut' });
+    const c = this.add.container(DESIGN_W / 2, BUTTON_Y + 345, [this.add.image(0, 0, parchmentTex(this, w, 96)), t]).setAlpha(0);
+    this.tweens.add({ targets: c, alpha: 1, y: { from: BUTTON_Y + 395, to: BUTTON_Y + 345 }, duration: 600, delay: 1700, ease: 'Back.easeOut' });
     this.tweens.add({ targets: c, angle: { from: -1.2, to: 1.2 }, duration: 1600, yoyo: true, repeat: -1, delay: 2300, ease: 'Sine.easeInOut' });
     this.layer.push(c);
+  }
+
+  // ---------------------------------------------------------------- the eras
+
+  /**
+   * سفر در زمان — the era plate: ◀ عصر ۲ از ۸ · اشکانی ▶. Arrows browse the whole timeline; an
+   * open era is chosen at once (the arena behind rebuilds in that era's skin), a locked one shows
+   * what it will be and how it opens, then the plate returns to the chosen era.
+   */
+  private buildEra(): void {
+    const chosen = currentIndex();
+    let shown = chosen;
+    let revert: Phaser.Time.TimerEvent | null = null;
+    const w = 700;
+    const h = 108;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x101834, 0.88).fillRoundedRect(-w / 2, -h / 2, w, h, 30);
+    bg.lineStyle(4, 0xf3c65a, 1).strokeRoundedRect(-w / 2, -h / 2, w, h, 30);
+    const title = this.add.text(0, -18, '', { fontFamily: FONT_FAMILY, fontSize: '34px', fontStyle: '900', color: '#fff0c8', rtl: true }).setOrigin(0.5);
+    const sub = this.add.text(0, 24, '', { fontFamily: FONT_FAMILY, fontSize: '24px', fontStyle: '700', color: '#b9c3e6', rtl: true }).setOrigin(0.5);
+    const arrow = (x: number, label: string) => this.add.text(x, 0, label, {
+      fontFamily: FONT_FAMILY, fontSize: '46px', fontStyle: '900', color: '#ffd24a',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    // RTL: the right arrow goes back in time, the left one forward.
+    const older = arrow(w / 2 - 44, '▶');
+    const newer = arrow(-w / 2 + 44, '◀');
+    const plate = this.add.container(DESIGN_W / 2, ERA_Y, [bg, title, sub, older, newer]).setAlpha(0);
+
+    const paint = () => {
+      const e = ERAS[shown];
+      const open = shown === chosen || isUnlocked(shown);
+      title.setText(`${open ? '' : '🔒 '}عصر ${faNum(shown + 1)} از ${faNum(ERAS.length)} · ${e.name}`).setColor(open ? '#fff0c8' : '#9aa3c0');
+      const how = !e.playable ? 'به‌زودی…' : `با شکست ${ERAS[shown - 1]?.bossName ?? ''} باز می‌شود`;
+      sub.setText(open ? `${e.year} · ${e.place}` : `${e.year} · ${how}`);
+      for (const t of [title, sub]) t.setScale(t.width > w - 150 ? (w - 150) / t.width : 1);
+      older.setAlpha(shown > 0 ? 1 : 0.25);
+      newer.setAlpha(shown < ERAS.length - 1 ? 1 : 0.25);
+    };
+    const browse = (dir: number) => {
+      if (this.started) return;
+      const next = shown + dir;
+      if (next < 0 || next >= ERAS.length) return;
+      shown = next;
+      services.audio.play('tick');
+      services.haptics.play('tick');
+      revert?.remove();
+      this.tweens.add({ targets: plate, scaleX: { from: 0.94, to: 1 }, duration: 180, ease: 'Back.easeOut' });
+      paint();
+      if (isUnlocked(shown)) {
+        if (shown !== chosen) this.switchEra(shown);
+        return;
+      }
+      revert = this.time.delayedCall(2600, () => {
+        shown = chosen;
+        paint();
+      });
+    };
+    older.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => browse(-1));
+    newer.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => browse(1));
+    paint();
+    this.tweens.add({ targets: plate, alpha: 1, y: { from: ERA_Y + 30, to: ERA_Y }, duration: 500, delay: 1350, ease: 'Back.easeOut' });
+    this.layer.push(plate);
+    // A newly opened era glints until it is visited.
+    if (unlockedIndex() > chosen) this.tweens.add({ targets: newer, scale: 1.3, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  }
+
+  /** Rebuilds the arena behind the title in the chosen era's skin. */
+  private switchEra(index: number): void {
+    if (!selectEra(index)) return;
+    this.started = true;
+    services.audio.play('whoosh');
+    // The era's real art (if any) is fetched while the title fades, then the arena rebuilds in it.
+    const art = loadEraArt(this, ERAS[index]);
+    this.cameras.main.fadeOut(260, 6, 8, 20);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      void art.then(() => {
+        this.scene.stop('Hud');
+        this.scene.start('Game', { title: true });
+      });
+    });
   }
 
   // ---------------------------------------------------------------- the secret
@@ -243,7 +328,7 @@ export class TitleScene extends Phaser.Scene {
       if (!wake) return;
       this.eyeWoke = true;
       this.tweens.add({ targets: this.logo, alpha: 0.25, duration: 300, yoyo: true, hold: 3200 });
-      const line = gradientText(this.add.text(DESIGN_W / 2, LOGO_Y + 10, 'کیست که خواب دیو سپید را آشفت؟', {
+      const line = gradientText(this.add.text(DESIGN_W / 2, LOGO_Y + 10, `کیست که خواب ${ERAS[currentIndex()].bossName} را آشفت؟`, {
         fontFamily: CALLIGRAPHY_FONT, fontSize: '64px', rtl: true, stroke: '#1a0404', strokeThickness: 6,
         padding: { top: 30, bottom: 44, left: 20, right: 20 },
       }).setOrigin(0.5).setAlpha(0).setScale(0.7), ['#ffe0d0', '#ff8a6a', '#b0201a']);
