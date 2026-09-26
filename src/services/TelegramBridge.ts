@@ -23,6 +23,8 @@ interface TgWebApp {
   expand(): void;
   disableVerticalSwipes?(): void;
   lockOrientation?(): void;
+  enableClosingConfirmation?(): void;
+  disableClosingConfirmation?(): void;
   setHeaderColor(color: string): void;
   setBackgroundColor(color: string): void;
   setBottomBarColor?(color: string): void;
@@ -59,6 +61,7 @@ export class TelegramBridge {
   readonly webApp: TgWebApp | null;
   /** True only inside a real Telegram client (the SDK object also exists in normal browsers). */
   readonly isTelegram: boolean;
+  private frameColor = '#1a120c';
 
   constructor() {
     const wa = window.Telegram?.WebApp ?? null;
@@ -68,15 +71,39 @@ export class TelegramBridge {
 
   init(frameColor: string): void {
     const wa = this.webApp;
+    this.frameColor = frameColor;
     if (!wa || !this.isTelegram) return;
     wa.ready();
     wa.expand();
     // Dragging to aim must never swipe the Mini App closed.
     if (wa.isVersionAtLeast('7.7')) wa.disableVerticalSwipes?.();
     if (wa.isVersionAtLeast('8.0')) wa.lockOrientation?.();
-    if (wa.isVersionAtLeast('6.9')) wa.setHeaderColor(frameColor);
-    if (wa.isVersionAtLeast('6.1')) wa.setBackgroundColor(frameColor);
-    if (wa.isVersionAtLeast('7.10')) wa.setBottomBarColor?.(frameColor);
+    this.applyFrameColors();
+  }
+
+  /** Header / background / bottom-bar colour (kept ours through Telegram theme changes). */
+  private applyFrameColors(): void {
+    const wa = this.webApp;
+    if (!wa || !this.isTelegram) return;
+    if (wa.isVersionAtLeast('6.9')) wa.setHeaderColor(this.frameColor);
+    if (wa.isVersionAtLeast('6.1')) wa.setBackgroundColor(this.frameColor);
+    if (wa.isVersionAtLeast('7.10')) wa.setBottomBarColor?.(this.frameColor);
+  }
+
+  /** Re-asserts our frame colours after the client's theme flips (day ↔ night). */
+  onThemeChange(): void {
+    this.applyFrameColors();
+  }
+
+  /**
+   * Telegram's «are you sure you want to close?» dialog while a run is live — a stray swipe
+   * must not throw away a good run. Off outside runs (6.2+).
+   */
+  closingConfirmation(on: boolean): void {
+    const wa = this.webApp;
+    if (!wa || !this.isTelegram || !wa.isVersionAtLeast('6.2')) return;
+    if (on) wa.enableClosingConfirmation?.();
+    else wa.disableClosingConfirmation?.();
   }
 
   get platform(): string {

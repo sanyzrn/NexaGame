@@ -111,6 +111,13 @@ export const MANIFEST: readonly AssetDef[] = [
 
 export const MANIFEST_BY_KEY: ReadonlyMap<string, AssetDef> = new Map(MANIFEST.map((d) => [d.key, d]));
 
+/**
+ * Atlas groups that are NOT needed for the first paint: the Preload scene skips them and they are
+ * fetched in the background (the boss art while the title screen is up) or on first use. If the
+ * fetch fails, the runtime placeholder keeps working, so the game never blocks on them.
+ */
+export const LAZY_ATLAS_GROUPS: readonly AtlasGroup[] = ['boss'];
+
 /** Shape of public/assets/pack.json, written by the packer and read by Preload. */
 export interface PackFile {
   version: string;

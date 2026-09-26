@@ -1,18 +1,20 @@
 {
   "name": "darafsh",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:lan": "vite --host",
-    "build": "npm run assets && tsc --noEmit && vite build",
+    "build": "npm run assets && npm run fonts && tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "assets": "tsx scripts/pack-assets.ts",
     "anchors": "tsx scripts/suggest-anchors.ts",
+    "fonts": "tsx scripts/subset-fonts.ts",
     "tunnel": "cloudflared tunnel --url http://localhost:5173",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "size": "tsx scripts/size-report.ts"
   },
   "dependencies": {
     "phaser": "^3.90.0"
@@ -21,6 +23,7 @@
     "@types/node": "^24.13.6",
     "free-tex-packer-core": "^0.3.9",
     "sharp": "^0.35.4",
+    "subset-font": "^2.9.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vazirmatn": "^33.0.3",

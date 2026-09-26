@@ -2,7 +2,7 @@
 
 A playable vertical slice of a Telegram Mini App archery game: Phaser 3, TypeScript and Vite.
 
-**Status: M6 «اوج» (the Ascension).** Everything from M5.5 (title, tutorial, waves, the White Div, the team finisher, Result, Hero Card and sharing, school powers, challenge links, surprises) **plus the M6 elevation**: three new enemy archetypes (سنگ‌انداز slinger, نفتی‌دار bomber, شبح wraith), fire arrows lit on braziers, breakable pots with loot, the سه‌تیر triple shot, the boss's سنگ‌باران boulder barrage and خشم خاکستری ash-fury phase, daily shared omens (فال لشکر), elites, combo calligraphy, and the run's «لحظهٔ برتر» on every card and share. See [ASSET_REPLACEMENT_GUIDE.md](ASSET_REPLACEMENT_GUIDE.md) for the art that is still placeholder.
+**Status: M6 final — «اوج» (the Ascension) + the performance/stability pass.** Everything from M5.5 (title, tutorial, waves, the White Div, the team finisher, Result, Hero Card and sharing, school powers, challenge links, surprises) **plus the M6 elevation**: three new enemy archetypes (سنگ‌انداز slinger, نفتی‌دار bomber, شبح wraith), fire arrows lit on braziers, breakable pots with loot, the سه‌تیر triple shot, the boss's سنگ‌باران boulder barrage and خشم خاکستری ash-fury phase, daily shared omens (فال لشکر), elites, combo calligraphy, and the run's «لحظهٔ برتر» on every card and share — **plus the M6 hardening**: a 1.5 MB first paint (lazy boss art, subset fonts), automatic light effects on weak phones, closing confirmation and self-pause inside Telegram, a graceful error screen, and one-command deploy configs. See [docs/M6_FINAL_REPORT.md](docs/M6_FINAL_REPORT.md) for the full numbers (sizes, FPS, known issues, next steps), [ASSET_REPLACEMENT_GUIDE.md](ASSET_REPLACEMENT_GUIDE.md) for the art that is still placeholder and [QA.md](QA.md) for the full test checklist.
 
 ## Run
 
@@ -10,10 +10,12 @@ A playable vertical slice of a Telegram Mini App archery game: Phaser 3, TypeScr
 npm install
 npm run dev        # http://localhost:5173
 npm run dev:lan    # also reachable from your phone on the same Wi-Fi
-npm test           # unit tests (geometry, ricochet, charge curve, waves, effects quality, omens, boulders, moments)
-npm run build      # packs art, type-checks, writes static files to dist/
+npm test           # unit tests (geometry, ricochet, charge curve, waves, effects quality, omens, boulders, moments, perf)
+npm run build      # packs art + subsets fonts, type-checks, writes static files to dist/
 npm run preview    # serves dist/ (use this to judge performance)
 npm run assets     # pack /assets-src → public/assets (add --force to repack everything)
+npm run fonts      # subset /fonts-src → public/fonts (whole Persian ranges, so new text never breaks)
+npm run size       # exact loading budget of dist/, per file (run after build)
 npm run anchors    # suggest per-pose anchors for real art (add -- --sheet for a preview image)
 ```
 
@@ -134,16 +136,18 @@ The pause menu is its own scene: while it is open the game and the HUD are truly
    - **Main Mini App:** `/mybots` → your bot → *Bot Settings* → *Configure Mini App* → *Enable Mini App* → send the URL. It then opens from the bot's profile ("Open App") and from `https://t.me/<your_bot>?startapp`.
 4. A quick-tunnel URL changes every time you restart the tunnel, so update it in BotFather. For a stable URL, deploy (below) and set that URL once.
 
-Inside Telegram the game calls `ready()` and `expand()`, disables vertical swipes (so dragging to aim can't close the app), locks portrait, sets header and background colours, and uses Telegram haptics. In a normal browser, haptics fall back to `navigator.vibrate` (Android).
+Inside Telegram the game calls `ready()` and `expand()`, disables vertical swipes (so dragging to aim can't close the app), locks portrait, sets header and background colours (re-asserted when the client flips its day/night theme), and uses Telegram haptics. In a normal browser, haptics fall back to `navigator.vibrate` (Android) and fail silently where unsupported.
+
+**During a run** Telegram's close confirmation is on, so a stray swipe can't throw the run away; it turns off again on the Result screen. Leaving or minimising the app mid-run **pauses the run by itself** — coming back shows the pause menu, and «ادامه» resumes exactly where you left off. Audio unlocks on the first touch (iOS) and suspends while the app is hidden.
 
 ## Deploy (static)
 
-`npm run build` produces `dist/`, which uses relative paths and works from any sub-path.
+`npm run build` produces `dist/`, which uses relative paths and works from any sub-path. Both hosts get correct cache headers automatically from the committed config files: everything versioned (`/bundle/*`, `/assets/*`, `/fonts/*`, `/vendor/*`) is immutable for a year, `index.html` always revalidates — so a re-deploy shows new art immediately (the packer bumps `pack.json`'s version, which busts the asset cache).
 
-- **Vercel:** Framework preset *Vite*, build command `npm run build`, output directory `dist`.
-- **Cloudflare Pages:** build command `npm run build`, output directory `dist`, env var `NODE_VERSION=22` (or newer).
+- **Vercel:** `vercel.json` is committed (build `npm run build`, output `dist`). Import the repo in the Vercel dashboard and deploy; or `npx vercel` from the project root. Point the bot's Mini App URL (BotFather, above) at the deployment URL.
+- **Cloudflare Pages:** `public/_headers` is committed and copied into `dist/`. Create a Pages project → connect the repo → build command `npm run build`, output directory `dist`, env var `NODE_VERSION=22` (or newer).
 
-`public/assets/` is generated, not committed. The build runs the packer, so `assets-src/` must be committed.
+`public/assets/` and `public/fonts/` are generated, not hand-made. The build runs the packer and the font subsetter, so `assets-src/` and `fonts-src/` must be committed.
 
 ## Art: adding and replacing assets
 
@@ -152,8 +156,8 @@ See [assets-src/README.md](assets-src/README.md) for the exact filenames, sizes 
 - Put a PNG in `assets-src/` with the manifest filename. It shows up with no other code changes. (A new *background* with a different composition also needs `src/data/arena.ts`: walls, lines, platform, the White Div's spot.)
 - Generated art rarely puts the feet exactly on the manifest anchor, so give each real pose its own anchor in `ART_ANCHORS` (`src/data/entities.ts`). `npm run anchors` measures every character PNG and prints the lines to paste: feet on the lowest opaque row, x on the torso's centre of mass, so walk frames don't jitter. `npm run anchors -- --sheet` also writes `.cache/anchors.png` with a cross on each anchor. A pose can also be mirrored there (`flip: true`); the shield-bearer's `walk_1` is, so the shield stays in the same hand.
 - Then check hitboxes, hp-bar heights and shadow sizes (same file) with the debug overlay.
-- Missing files are drawn as placeholders with the same key, size and anchor. The console lists them in one warning, and the debug overlay shows them (and paints their name labels, which are hidden otherwise). If a pose is missing but a sibling pose is real, the sibling is shown instead (`POSE_FALLBACK`), e.g. `hero_hurt` → `hero_idle` with the red hurt flash.
-- The packer builds trimmed atlases (max 2048²) as WebP with alpha, plus a PNG fallback that is used only when the device can't decode WebP. Backgrounds become standalone WebP q80 with a JPG fallback. Wrongly sized sources are resized to the manifest size with a warning.
+- Missing files are drawn as placeholders with the same key, size and anchor. The list is printed once in dev only (production consoles stay clean), and the debug overlay shows them (and paints their name labels, which are hidden otherwise). If a pose is missing but a sibling pose is real, the sibling is shown instead (`POSE_FALLBACK`), e.g. `hero_hurt` → `hero_idle` with the red hurt flash.
+- The packer builds trimmed atlases (max 2048²) as WebP with alpha, plus a palette-quantized PNG fallback (only for devices that can't decode WebP — now roughly 2× the WebP size instead of 3.5×, keeping the whole fallback path under the 4 MB budget). Backgrounds become standalone WebP q80 with a JPG fallback. WebP quality can be tuned per atlas group (`ATLAS_WEBP_BY_GROUP` in `scripts/pack-assets.ts`; the boss runs at q84). Wrongly sized sources are resized to the manifest size with a warning.
 - **Collision shapes never come from images.** Tune them in `src/data/entities.ts` (hitboxes, relative to the anchor, in design px) and `src/data/arena.ts` (walls, lines, pillar positions, hero, decor, the White Div's spot), then check them with the debug overlay.
 - New art keys go in `src/assets/manifest.ts` (+ a placeholder painter in `src/assets/placeholders.ts`).
 
@@ -203,13 +207,27 @@ Every animation, lighting and particle number lives in `src/config/feel.ts`. All
 | `surprises` | on/off flag and look for each surprise: trick shots, golden imp, Homa, fleeing imps, flame bow, the title's Div-eyes secret |
 | `result`, `reactions` | flood, panel slide, count-up speed and tick rate, star gap, group drain; the teammates' replies (`reactions.enabled` is M5's surprise flag), typing time, confetti |
 
-## Performance and particle budget
+## Performance, loading budget and quality
 
-Everything is pooled: arrows (12), damage numbers (24), rings, and every particle effect uses a pre-allocated Phaser emitter that recycles its particles. Nothing allocates per frame. The debug overlay shows alive particles against the budget (the sum of all emitter caps).
+Everything is pooled: arrows (12), damage numbers (24), rings, and every particle effect uses a pre-allocated Phaser emitter that recycles its particles. Nothing allocates per frame (verified by audit and by the 10-restart memory run). The debug overlay shows alive particles against the budget (the sum of all emitter caps).
 
 - Full-screen passes: the background (one shader pass that also sways the painted foliage), one multiply grade and one additive bloom layer. The light shafts are three soft quads.
 - Measured on wave 5 with rapid golden shots: **57 live particles on average, 256 at peak** (full effects); **33 on average, 147 at peak** in light mode. Emitter caps add up to 1,164, so nothing is ever created mid-game.
 - **Light** effects mode halves every burst and the motes and hides the shafts.
+
+**Automatic light effects (M6).** `systems/Perf.ts` watches the real frame rate; if it stays under 45 fps for 3 seconds it switches to light effects by itself and shows a tiny toast. The player can always turn full effects back on (pause menu) — and from then on the auto switch stays out of the way for the session. Thresholds live in `feel.ts → quality.autoReduce`; the decision core is pure and unit-tested.
+
+**Loading budget (M6).** `npm run size` prints the exact per-file budget of `dist/`. Current numbers on the wire (gzip):
+
+| Phase | Size | What |
+|---|---|---|
+| First paint, WebP path | **≈ 1.46 MB** | bundle 418 KB gz + art 970 KB WebP + both Vazirmatn weights 59 KB + Telegram SDK 13 KB gz + JSONs |
+| First paint, no-WebP fallback | ≈ 1.57 MB | same, but PNG/JPG twins of the art (palette-quantized) |
+| Lazy | ≈ 1.19 MB | boss atlas (fetched in the background while the title is up), card_bg (first Hero Card), the Nastaliq calligraphy font |
+
+The boss art is the only lazy atlas group (`LAZY_ATLAS_GROUPS` in `manifest.ts`): the title shows his placeholder silhouette (by design — he is a dark silhouette there anyway) and the real texture swaps in silently when it arrives, even mid-intro on a slow network. Fonts are subset to whole Persian ranges (every letter + both digit sets + the punctuation we use), so new Persian strings can never render tofu.
+
+**Leak check (M6).** Ten restarts in a row show flat `performance.memory` and a constant Phaser texture count: every texture is cached by key (`ui/kit.ts`), the Hero Card canvas texture is removed on close, and pools are never re-created per run. `index.html` paints a branded splash instantly (before any JS), and a failed boot shows a Persian error screen with «تلاش دوباره» instead of a black page.
 
 ## Debug overlay
 
@@ -221,10 +239,10 @@ Keys while it is on: `H` hurt, `B` boss now, `N` boss −15%, `P` power full, `G
 
 ```
 src/
-  main.ts                 Telegram init, font + WebP detection, Phaser config (1080x1920, FIT)
-  config/                 balance.ts (gameplay numbers), feel.ts (look and motion), display.ts (design size, colours, depths)
+  main.ts                 Telegram init, font + WebP detection, splash/error screen, auto-pause on hide, perf attach, Phaser config (1080x1920, FIT)
+  config/                 balance.ts (gameplay numbers), feel.ts (look and motion, quality/auto-reduce), display.ts (design size, colours, depths)
   data/                   arena.ts (layout, fire braziers, pots), entities.ts (per-pose anchors, scales, hitboxes, shadows), waves.ts, omens.ts (فال لشکر), moments.ts (لحظهٔ برتر), lines.ts (epic lines, reactions)
-  assets/                 manifest.ts, Art.ts (key → atlas frame / image / placeholder, anchors, fallbacks), placeholders.ts, fxTextures.ts
+  assets/                 manifest.ts (incl. LAZY_ATLAS_GROUPS), Art.ts (key → atlas frame / image / placeholder, anchors, fallbacks), lazy.ts (lazy atlas groups), placeholders.ts, fxTextures.ts
   render/                 Atmosphere (bg shader, grade, shafts, motes), BendSprite (bendable pose strip), Shadow
   scenes/                 Boot → Preload → Game (title mode at dusk) + Title → Game (play) + Hud → Result (+ Card); Pause over all
   systems/
@@ -237,6 +255,7 @@ src/
     WaveSystem.ts         wave schedule, pooled enemies, wave start/clear signals, omen filters + elite spawns
     AimView.ts            dotted trajectory, lock-on reticle, charge ring, cancel
     FX.ts / TimeCtl.ts    particles, shake, hit-stop / slow-mo
+    Perf.ts               FPS watch → automatic light effects (decision core pure, unit tested)
     Audio.ts              procedural Web Audio SFX + mute + hold (pause)
     Volley.ts             the teammates' volley (surprise)
     Tutorial.ts           the hands-on first-play tutorial (ghost finger, golden step, ricochet hint)
@@ -244,11 +263,16 @@ src/
     Powers.ts, powerMeter.ts   the three school powers; the meter (pure, unit tested)
     Surprises.ts          trick-shot calls, the Homa, fleeing imps' alarm, the flame bow
   entities/               Hero, Boss (idle White Div), Decor (pillars, braziers, banners, pots), Enemy (pooled, all three types)
-  services/               TelegramBridge, Haptics, Settings, SafeArea, Share, links (deep links, start parameters), GameService + MockGameService + MockGroupSession, chain.ts (pure, unit tested)
+  services/               TelegramBridge (back button, closing confirmation, safe areas, theme), Haptics, Settings (school, light effects + auto source), SafeArea, Share, links (deep links, start parameters), GameService + MockGameService + MockGroupSession, chain.ts (pure, unit tested)
   ui/                     kit (code-drawn panels, buttons, ribbons, toggles, banners, ornaments), Button + Toggle, DamageNumbers,
                           GroupBar, GoldStream, TeamToasts, SparkFlight, ChainBadge, ComboBadge, Hearts, RescueSpirit, avatar,
                           GhostFinger, HeroCard (Canvas 2D renderer)
   debug/                  DebugOverlay
+scripts/
+  pack-assets.ts          assets-src → atlases/WebP + palette-PNG fallback + pack.json (per-group WebP quality)
+  subset-fonts.ts         fonts-src → public/fonts (Persian-range subsets, layout features kept)
+  size-report.ts          the exact per-file loading budget of dist/
+  suggest-anchors.ts      per-pose anchor suggestions for real art
 ```
 
 Systems talk through typed `Signal`s, and `GameScene` only wires them together. `GameService` is the backend seam: the demo uses `MockGameService`, and a Cloudflare Workers implementation can drop in later. That includes `prepareShare()` for real image sharing via `WebApp.shareMessage`, and `prepareInvite()` for the «دعوت هم‌رزم» link (a backend can turn it into a referral).

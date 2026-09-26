@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
+import { ensureAtlas } from '../assets/lazy';
 import { setPlaceholderLabels } from '../assets/placeholders';
 import { BALANCE } from '../config/balance';
 import { DEPTH, DESIGN_H, DESIGN_W } from '../config/display';
@@ -419,9 +420,18 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.buildDebug(this.collider.pillars, launch);
     if (this.mode === 'title') this.enterTitle();
     else {
+      // Restart from the pause menu / Result: the run starts right away.
+      services.telegram.closingConfirmation(true);
       this.cameras.main.fadeIn(450, 10, 6, 20);
       this.pendingStart = true;
     }
+
+    // M6: on a weak phone the frame rate decides — light effects by themselves, with a tiny toast.
+    services.perf.onAutoReduce.add(() => {
+      if (this.mode === 'play' && !this.ended && this.hud?.ready) {
+        this.hud.showToast('جلوه‌ها سبک شد', 'برای روان‌ماندن بازی — از «مکث» قابل تغییر است');
+      }
+    });
   }
 
   // ---------------------------------------------------------------- title & the flight in
@@ -454,6 +464,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     ember(0.9, 1.25, 1, DEPTH.motes + 1, F.embers.perSec);
     ember(0.5, 0.8, 0.7, DEPTH.grade - 1, F.embers.perSec * 0.7);
     this.placeTitleCamera(0);
+    // The boss art is lazy (M6): fetch it in the background while the player reads the title —
+    // the silhouette is the placeholder either way, and the real pose swaps in when it arrives.
+    void ensureAtlas(this, 'boss');
     this.scene.launch('Title');
   }
 
@@ -498,6 +511,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   beginPlay(): void {
     if (this.mode !== 'title') return;
     this.mode = 'flying';
+    // A stray swipe must not kill a run the player has committed to.
+    services.telegram.closingConfirmation(true);
     const F = FEEL.title;
     const cam = this.cameras.main;
     const x0 = cam.midPoint.x;
@@ -687,6 +702,15 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     const { audio } = services;
     this.aim.cancel();
     this.aim.enabled = false;
+    // Normally the boss art arrived long ago (fetched during the title); on a very slow network
+    // the intro waits briefly, then plays on the placeholder rather than freezing the fight.
+    void Promise.race([ensureAtlas(this, 'boss'), new Promise((r) => this.time.delayedCall(2500, r))]).then(() => {
+      if (this.defeated || this.ended) return;
+      this.playBossIntro(I, cam, audio);
+    });
+  }
+
+  private playBossIntro(I: typeof FEEL.boss.intro, cam: Phaser.Cameras.Scene2D.Camera, audio: typeof services.audio): void {
     this.atmosphere.darken(I.darken, 600);
     for (const at of I.drumsAtMs) {
       this.time.delayedCall(at, () => {
@@ -701,6 +725,23 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if (services.settings.bossIntroSeen) {
       this.input.once(Phaser.Input.Events.POINTER_DOWN, () => this.boss.skipIntro());
     }
+  }
+
+  /**
+   * M6: leaving / minimising the app mid-run must never cost hearts — the run pauses itself
+   * (the pause menu freezes the whole world) and waits for the player. Returns true if it did.
+   * Re-entry safe: visibilitychange and Telegram's `deactivated` can fire in the same tick.
+   */
+  private lastAutoPauseAt = 0;
+
+  autoPause(): boolean {
+    if (this.mode !== 'play' && this.mode !== 'flying') return false;
+    if (this.ended || this.scene.isPaused('Game')) return false;
+    if (this.scene.isActive('Pause')) return false;
+    if (Date.now() - this.lastAutoPauseAt < 500) return false;
+    this.lastAutoPauseAt = Date.now();
+    this.scene.launch('Pause');
+    return true;
   }
 
   private wireBoss(): void {
@@ -1583,6 +1624,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private async finishRun(won: boolean): Promise<void> {
     if (this.ended) return;
     this.ended = true;
+    services.telegram.closingConfirmation(false);
     this.hud.endRun();
     const group = this.hud.group;
     const stats: RunStats = finalize({

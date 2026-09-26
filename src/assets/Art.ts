@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { ART_ANCHORS, POSE_FALLBACK } from '../data/entities';
+import { Signal } from '../utils/Signal';
 import { MANIFEST_BY_KEY } from './manifest';
 
 export interface TexRef {
@@ -25,6 +26,8 @@ class ArtRegistry {
   private readonly refs = new Map<string, TexRef>();
   private readonly real = new Set<string>();
   private readonly anchors = new Map<string, Anchor>();
+  /** Fires (with the key) whenever real art is registered late (lazy atlas groups). */
+  readonly onChange = new Signal<string>();
   readonly missing: string[] = [];
 
   register(key: string, ref: TexRef, real: boolean): void {
@@ -32,6 +35,7 @@ class ArtRegistry {
     if (real) this.real.add(key);
     else this.real.delete(key);
     this.anchors.clear();
+    if (real) this.onChange.emit(key);
   }
 
   has(key: string): boolean {

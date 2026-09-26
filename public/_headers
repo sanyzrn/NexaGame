@@ -1,0 +1,17 @@
+# Cloudflare Pages headers (this file is copied into dist/ by the build).
+# Versioned art/fonts/bundle are immutable; the HTML entry always revalidates.
+
+/bundle/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

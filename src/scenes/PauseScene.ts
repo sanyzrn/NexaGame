@@ -99,6 +99,8 @@ export class PauseScene extends Phaser.Scene {
     services.audio.hold(false);
     services.audio.stopChoir(0.1);
     this.scene.stop('Hud');
-    this.scene.start('Game');
+    // `title: false` matters: `scene.start` with no data reuses the previous launch data, and a
+    // run restarted from the first boot would otherwise land back on the title screen.
+    this.scene.start('Game', { title: false });
   }
 }

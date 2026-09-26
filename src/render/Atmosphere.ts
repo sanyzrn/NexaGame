@@ -89,7 +89,7 @@ export class Atmosphere {
     }).setDepth(DEPTH.motes));
 
     this.applyQuality(services.settings.reducedEffects);
-    const off = services.settings.onReducedChange.add((on) => this.applyQuality(on));
+    const off = services.settings.onReducedChange.add(({ on }) => this.applyQuality(on));
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
   }
 

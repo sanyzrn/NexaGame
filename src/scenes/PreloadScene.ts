@@ -1,13 +1,21 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
 import { createFxTextures } from '../assets/fxTextures';
-import { MANIFEST, type PackFile } from '../assets/manifest';
+import { LAZY_ATLAS_GROUPS, MANIFEST, MANIFEST_BY_KEY, type PackFile } from '../assets/manifest';
 import { createPlaceholder } from '../assets/placeholders';
 import { COLORS, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { services } from '../services';
 import { buttonTex, dimTex, gradientText, panelTex } from '../ui/kit';
 
-/** Loads real art listed in pack.json, generates placeholders for the rest, shows a progress bar. */
+/** An atlas sheet is lazy when it belongs entirely to a lazy group (fetched later, not at boot). */
+function isLazySheet(a: PackFile['atlases'][number]): boolean {
+  return a.frames.length > 0 && a.frames.every((f) => {
+    const group = MANIFEST_BY_KEY.get(f)?.atlas;
+    return group !== undefined && group !== null && (LAZY_ATLAS_GROUPS as readonly string[]).includes(group);
+  });
+}
+
+/** Loads real art needed for the first paint, generates placeholders for the rest, shows progress. */
 export class PreloadScene extends Phaser.Scene {
   private failed = new Set<string>();
 
@@ -22,6 +30,7 @@ export class PreloadScene extends Phaser.Scene {
     const base = 'assets/';
     const v = `?v=${pack.version}`;
     for (const a of pack.atlases) {
+      if (isLazySheet(a)) continue; // boss art: fetched in the background while the title is up
       const texture = services.caps.webp ? a.webp : a.png;
       this.load.atlas(`atlas:${a.name}`, base + texture + v, base + a.json + v);
     }
@@ -39,27 +48,32 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     const pack = this.registry.get('pack') as PackFile;
+    const lazyKeys = new Set(MANIFEST.filter((d) => d.lazy).map((d) => d.key));
 
     for (const a of pack.atlases) {
       const key = `atlas:${a.name}`;
-      if (this.failed.has(key) || !this.textures.exists(key)) continue;
+      if (this.failed.has(key) || !this.textures.exists(key) || isLazySheet(a)) continue;
       for (const frame of a.frames) Art.register(frame, { texture: key, frame }, true);
     }
     for (const img of pack.images) {
+      if (lazyKeys.has(img.key)) continue;
       if (!this.failed.has(img.key) && this.textures.exists(img.key)) Art.register(img.key, { texture: img.key }, true);
     }
 
     Art.missing.length = 0;
     for (const def of MANIFEST) {
       if (Art.has(def.key)) continue;
-      // Lazy assets that exist on disk are loaded when first needed (M5); only generate truly missing ones.
+      // card_bg exists on disk and HeroCard renders it only after ensureLazy resolves.
       if (def.lazy && pack.images.some((i) => i.key === def.key)) continue;
+      // Lazy atlas frames (the boss) get their placeholder NOW too: the Boss entity is built the
+      // moment the game scene boots, and the real texture swaps in when the lazy load lands.
       createPlaceholder(this, def);
       Art.register(def.key, { texture: def.key }, false);
-      Art.missing.push(def.key);
+      if (!def.lazy) Art.missing.push(def.key);
     }
-    if (Art.missing.length) {
-      console.warn(`[assets] ${Art.missing.length}/${MANIFEST.length} assets missing — using placeholders:\n  ${Art.missing.join(', ')}`);
+    if (Art.missing.length && import.meta.env.DEV) {
+      // Production stays silent: placeholders are the designed stand-in until final art lands.
+      console.info(`[assets] ${Art.missing.length}/${MANIFEST.length} assets missing — using placeholders:\n  ${Art.missing.join(', ')}`);
     }
 
     createFxTextures(this);

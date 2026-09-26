@@ -8,6 +8,13 @@
 export const FEEL = {
   quality: {
     reducedParticleScale: 0.5,
+    /** M6: auto "light effects" on a weak phone (see systems/Perf.ts). */
+    autoReduce: {
+      enabled: true,
+      minFps: 45,
+      sustainMs: 3000,
+      sampleMs: 500,
+    },
   },
 
   // ---------------------------------------------------------------- impacts & camera

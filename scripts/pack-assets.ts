@@ -15,12 +15,19 @@ import { basename, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { packAsync } from 'free-tex-packer-core';
-import { MANIFEST, MANIFEST_BY_KEY, type AssetDef, type AtlasGroup, type PackFile } from '../src/assets/manifest.ts';
+import { MANIFEST, MANIFEST_BY_KEY, LAZY_ATLAS_GROUPS, type AssetDef, type AtlasGroup, type PackFile } from '../src/assets/manifest.ts';
 
 /** Bump when packing options change, to invalidate the cache. */
-const PACKER_VERSION = 2;
+const PACKER_VERSION = 3;
 const ATLAS_MAX = 2048;
 const ATLAS_WEBP = { quality: 88, alphaQuality: 90, effort: 5 } as const;
+/** Per-group WebP quality overrides (the default above suits everything else). */
+const ATLAS_WEBP_BY_GROUP: Partial<Record<AtlasGroup, number>> = { boss: 84 };
+/**
+ * PNG fallback (only devices without WebP decode, mostly old iOS): palette-quantized keeps the
+ * whole fallback path near the WebP path's size instead of the ~3.5× of full PNGs.
+ */
+const ATLAS_PNG = { palette: true, quality: 80, effort: 8, compressionLevel: 9 } as const;
 const BG_WEBP = { quality: 80, effort: 5 } as const;
 const BG_JPG = { quality: 82, mozjpeg: true } as const;
 
@@ -176,20 +183,41 @@ async function packAtlas(group: AtlasGroup, list: Source[], outDir: string): Pro
     data.meta.image = `${name}.webp`;
     const entry = { name, webp: `${name}.webp`, png: `${name}.png`, json: `${name}.json`, frames: Object.keys(data.frames) };
     writeFileSync(join(outDir, entry.json), JSON.stringify(data));
-    await sharp(png).webp(ATLAS_WEBP).toFile(join(outDir, entry.webp));
-    await sharp(png).png({ compressionLevel: 9, adaptiveFiltering: true }).toFile(join(outDir, entry.png));
+    const webpOpts = ATLAS_WEBP_BY_GROUP[group] !== undefined
+      ? { ...ATLAS_WEBP, quality: ATLAS_WEBP_BY_GROUP[group] }
+      : ATLAS_WEBP;
+    await sharp(png).webp(webpOpts).toFile(join(outDir, entry.webp));
+    await sharp(png).png(ATLAS_PNG).toFile(join(outDir, entry.png));
     out.push(entry);
   }
   return out;
 }
 
 function report(pack: PackFile, sources: Source[], outDir: string, log: (m: string) => void): void {
-  const kb = (f: string) => (statSync(join(outDir, f)).size / 1024).toFixed(0) + ' KB';
-  for (const a of pack.atlases) log(`[assets] atlas ${a.name}: ${a.frames.length} frames, webp ${kb(a.webp)}, png ${kb(a.png)}`);
-  for (const i of pack.images) log(`[assets] image ${i.key}: webp ${kb(i.webp)}, jpg ${kb(i.fallback)}`);
+  const size = (f: string) => statSync(join(outDir, f)).size;
+  const kb = (f: string) => (size(f) / 1024).toFixed(0) + ' KB';
+  const isLazyAtlas = (a: PackFile['atlases'][number]) =>
+    a.frames.some((f) => {
+      const g = MANIFEST_BY_KEY.get(f)?.atlas;
+      return g !== undefined && g !== null && (LAZY_ATLAS_GROUPS as readonly string[]).includes(g);
+    });
+  let initial = 0;
+  let lazy = 0;
+  for (const a of pack.atlases) {
+    log(`[assets] ${isLazyAtlas(a) ? 'lazy ' : ''}atlas ${a.name}: ${a.frames.length} frames, webp ${kb(a.webp)}, png ${kb(a.png)}`);
+    if (isLazyAtlas(a)) lazy += size(a.webp) + size(a.json);
+    else initial += size(a.webp) + size(a.json);
+  }
+  for (const i of pack.images) {
+    const isLazyImage = MANIFEST_BY_KEY.get(i.key)?.lazy === true;
+    log(`[assets] ${isLazyImage ? 'lazy ' : ''}image ${i.key}: webp ${kb(i.webp)}, jpg ${kb(i.fallback)}`);
+    if (isLazyImage) lazy += size(i.webp);
+    else initial += size(i.webp);
+  }
   const have = new Set(sources.map((s) => s.def.key));
   const missing = MANIFEST.filter((d) => !have.has(d.key)).map((d) => d.key);
   log(`[assets] packed ${have.size}/${MANIFEST.length} assets` + (missing.length ? `; ${missing.length} will use placeholders` : ''));
+  log(`[assets] first-paint art (WebP): ${(initial / 1024).toFixed(0)} KB, lazy-loaded: ${(lazy / 1024).toFixed(0)} KB`);
 }
 
 // CLI

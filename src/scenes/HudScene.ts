@@ -135,10 +135,8 @@ export class HudScene extends Phaser.Scene {
     this.offs.push(() => this.scale.off(Phaser.Scale.Events.RESIZE, relayout));
     this.applySafeArea();
 
-    const onHidden = () => this.openMenu();
-    this.game.events.on(Phaser.Core.Events.HIDDEN, onHidden);
-    this.offs.push(() => this.game.events.off(Phaser.Core.Events.HIDDEN, onHidden));
-    this.offs.push(services.telegram.on('deactivated', onHidden));
+    // Leaving/minimising the app mid-run pauses it via GameScene.autoPause (main.ts wires
+    // visibilitychange + Telegram's deactivated to it) — one path, race-guarded there.
     this.input.keyboard?.on('keydown-ESC', () => this.openMenu());
 
     this.joinGroup();

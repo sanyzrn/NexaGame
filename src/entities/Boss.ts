@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
+import { MANIFEST_BY_KEY } from '../assets/manifest';
 import { BALANCE } from '../config/balance';
 import { DEPTH } from '../config/display';
 import { FEEL } from '../config/feel';
@@ -195,8 +196,15 @@ export class Boss {
       }
     };
     applyQuality(services.settings.reducedEffects);
-    const off = services.settings.onReducedChange.add(applyQuality);
+    const off = services.settings.onReducedChange.add(({ on }) => applyQuality(on));
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
+
+    // Lazy boss art (M6): the atlas usually lands while the title is up; re-apply the pose so the
+    // rope swaps from the placeholder to the real texture without a snap (same anchor rules).
+    const offArt = Art.onChange.add((key) => {
+      if (MANIFEST_BY_KEY.get(key)?.atlas === 'boss') this.body.setPose(this.body.pose, true);
+    });
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, offArt);
 
     this.growlIn = Phaser.Math.Between(B.growlEveryMs[0], B.growlEveryMs[1]) * 0.5;
 

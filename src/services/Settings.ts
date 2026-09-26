@@ -9,9 +9,11 @@ const INTRO_KEY = 'darafsh.bossIntroSeen';
 const SCHOOL_KEY = 'darafsh.school';
 const SCHOOLS: readonly School[] = ['rostami', 'arashi', 'simorghi'];
 
+export type ReducedSource = 'auto' | 'manual';
+
 /** Player settings persisted in localStorage. */
 export class Settings {
-  readonly onReducedChange = new Signal<boolean>();
+  readonly onReducedChange = new Signal<{ on: boolean; source: ReducedSource }>();
   private _reduced = storage.get(REDUCED_KEY) === '1';
 
   /** Weak-phone mode: half the particles, no light shafts. */
@@ -19,11 +21,12 @@ export class Settings {
     return this._reduced;
   }
 
-  setReducedEffects(on: boolean): void {
-    if (on === this._reduced) return;
+  setReducedEffects(on: boolean, source: ReducedSource = 'manual'): void {
+    if (on === this._reduced && source === 'manual') return;
+    const changed = on !== this._reduced;
     this._reduced = on;
     storage.set(REDUCED_KEY, on ? '1' : '0');
-    this.onReducedChange.emit(on);
+    if (changed || source === 'auto') this.onReducedChange.emit({ on, source });
   }
 
   /** A full-quality particle count, scaled for the current quality (never below 1 if it was ≥ 1). */
