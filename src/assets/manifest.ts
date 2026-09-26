@@ -9,8 +9,7 @@
  */
 
 /** Atlas a file is packed into. `null` = standalone image (large, opaque backgrounds). */
-export type AtlasGroup = 'hero' | 'boss' | 'enemies' | 'propsui'
-  | 'era2' | 'era3' | 'era4' | 'era5' | 'era6' | 'era7' | 'era8';
+export type AtlasGroup = 'hero' | 'boss' | 'enemies' | 'propsui' | `era${number}`;
 
 /** How the placeholder painter should draw this asset while the real PNG is missing. */
 export type PlaceholderKind =
@@ -130,16 +129,12 @@ export const SKINNABLE_KEYS: readonly string[] = [
   'pillar_01', 'banner', 'brazier', 'pot', 'arrow',
 ];
 
+/** Number of eras; era N (N ≥ 2) skins with prefix `eN` into atlas group `eraN`. Keep in sync with data/eras.ts. */
+export const ERA_COUNT = 17;
+
 /** Era skin prefixes that have assets (each packs into its own atlas group). */
-export const ERA_SKINS: readonly { prefix: string; atlas: AtlasGroup }[] = [
-  { prefix: 'e2', atlas: 'era2' },
-  { prefix: 'e3', atlas: 'era3' },
-  { prefix: 'e4', atlas: 'era4' },
-  { prefix: 'e5', atlas: 'era5' },
-  { prefix: 'e6', atlas: 'era6' },
-  { prefix: 'e7', atlas: 'era7' },
-  { prefix: 'e8', atlas: 'era8' },
-];
+export const ERA_SKINS: readonly { prefix: string; atlas: AtlasGroup }[] =
+  Array.from({ length: ERA_COUNT - 1 }, (_, i) => ({ prefix: `e${i + 2}`, atlas: `era${i + 2}` as AtlasGroup }));
 
 const BASE_BY_KEY = new Map(BASE.map((d) => [d.key, d]));
 
@@ -161,7 +156,7 @@ export const MANIFEST_BY_KEY: ReadonlyMap<string, AssetDef> = new Map(MANIFEST.m
 export const LAZY_ATLAS_GROUPS: readonly AtlasGroup[] = [
   'boss',
   // Era skins: only the era being played is fetched (Preload loads the current era at boot).
-  'era2', 'era3', 'era4', 'era5', 'era6', 'era7', 'era8',
+  ...ERA_SKINS.map((e) => e.atlas),
 ];
 
 /** Shape of public/assets/pack.json, written by the packer and read by Preload. */

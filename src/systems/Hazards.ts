@@ -63,6 +63,7 @@ export class Hazards {
     /** The hero's bow, for "was the landing close enough to stagger" and rock aiming. */
     private readonly heroPos: () => Point,
   ) {
+    const live = this.live;
     const make = (kind: HazardKind, texKey: string): Hazard => {
       const img = Art.image(scene, 0, 0, texKey).setVisible(false).setDepth(DEPTH.fx);
       const glow = scene.add.image(0, 0, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.fx - 2).setVisible(false);
@@ -82,7 +83,10 @@ export class Hazards {
           if (!h.active) return 'pass';
           h.hp -= hit.damage;
           if (h.hp > 0) return 'hit'; // chipped, not shattered — the arrow is spent
-          Hazards.burst(h);
+          // Shattered: it is gone for good — out of the flight list, so it never "lands".
+          Hazards.release(h);
+          const i = live.indexOf(h);
+          if (i >= 0) live.splice(i, 1);
           host.onIntercept(h.kind, h.img.x, h.img.y);
           return 'hit';
         },
@@ -154,11 +158,6 @@ export class Hazards {
     h.glow.setVisible(false);
     h.warn.setVisible(false);
     h.shadow.setVisible(false);
-  }
-
-  /** Shattered mid-air (an intercept). */
-  private static burst(h: Hazard): void {
-    Hazards.release(h);
   }
 
   update(dt: number): void {

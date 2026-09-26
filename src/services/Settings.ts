@@ -1,4 +1,5 @@
 import { FEEL } from '../config/feel';
+import { DIFFICULTY_BY_ID, type DifficultyDef, type DifficultyId } from '../data/difficulty';
 import type { School } from '../config/team';
 import { Signal } from '../utils/Signal';
 import { storage } from '../utils/storage';
@@ -7,6 +8,7 @@ const REDUCED_KEY = 'darafsh.reducedEffects';
 const TUTORIAL_KEY = 'darafsh.tutorialDone';
 const INTRO_KEY = 'darafsh.bossIntroSeen';
 const SCHOOL_KEY = 'darafsh.school';
+const DIFFICULTY_KEY = 'darafsh.difficulty';
 const SCHOOLS: readonly School[] = ['rostami', 'arashi', 'simorghi'];
 
 export type ReducedSource = 'auto' | 'manual';
@@ -56,6 +58,15 @@ export class Settings {
 
   setSchool(s: School): void {
     storage.set(SCHOOL_KEY, s);
+  }
+
+  /** درجهٔ سختی (normal until the player picks one). */
+  get difficulty(): DifficultyDef {
+    return DIFFICULTY_BY_ID.get(storage.get(DIFFICULTY_KEY) as DifficultyId) ?? DIFFICULTY_BY_ID.get('normal')!;
+  }
+
+  setDifficulty(id: DifficultyId): void {
+    storage.set(DIFFICULTY_KEY, id);
   }
 
   /** The boss intro has played once: from now on a tap skips it. */

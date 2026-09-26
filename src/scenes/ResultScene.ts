@@ -420,16 +420,30 @@ export class ResultScene extends Phaser.Scene {
     const bottom = PY + PH / 2;
     const next = this.d.nextEra;
     const again = next
-      ? new Button(this, cx, bottom - 250, 600, 124, 'سفر در زمان ⏳', () => this.timeJump(next), 'gold')
-      : new Button(this, cx, bottom - 250, 540, 124, 'دوباره', () => this.playAgain(), 'gold');
+      ? new Button(this, cx + 120, bottom - 250, 540, 124, 'سفر در زمان ⏳', () => this.timeJump(next), 'gold')
+      : new Button(this, cx + 120, bottom - 250, 540, 124, 'دوباره', () => this.playAgain(), 'gold');
+    const menu = new Button(this, cx - 305, bottom - 250, 260, 124, 'منو', () => this.toMenu(), 'lapis');
     const card = new Button(this, cx + 205, bottom - 95, 390, 108, 'کارت افتخار', () => this.openCard(), 'lapis');
     const invite = new Button(this, cx - 205, bottom - 95, 390, 108, 'دعوت هم‌رزم', () => void this.invite(), 'red');
-    [again, card, invite].forEach((b, i) => {
+    [again, menu, card, invite].forEach((b, i) => {
       b.setAlpha(0).setScale(0.8);
       this.panel.add(b);
       this.tweens.add({ targets: b, alpha: 1, scale: 1, duration: 360, delay: i * 90, ease: 'Back.easeOut' });
     });
     this.tweens.add({ targets: again, scale: { from: 1, to: 1.04 }, duration: 900, yoyo: true, repeat: -1, delay: 800, ease: 'Sine.easeInOut' });
+  }
+
+  /** Back to the title: era, difficulty and school can be changed there. */
+  private toMenu(): void {
+    if (this.leaving) return;
+    this.leaving = true;
+    services.audio.play('ui');
+    this.cameras.main.fadeOut(320, 10, 6, 20);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.stop('Card');
+      this.scene.stop('Hud');
+      this.scene.start('Game', { title: true });
+    });
   }
 
   private playAgain(): void {

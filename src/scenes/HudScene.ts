@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
-import { BALANCE } from '../config/balance';
 import { CALLIGRAPHY_FONT, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
 import { PLAYER_COLOR, type TeamMember } from '../config/team';
@@ -114,7 +113,7 @@ export class HudScene extends Phaser.Scene {
       this.openMenu();
     });
 
-    this.hearts = new Hearts(this, BALANCE.hero.hearts, Z.top);
+    this.hearts = new Hearts(this, services.settings.difficulty.hearts, Z.top);
     this.groupBar = new GroupBar(this, DESIGN_W / 2, GROUP_BAR_Y, '');
     this.groupBar.root.setDepth(Z.top);
     this.chain = new ChainBadge(this, FEEL.chain.x, FEEL.chain.y, Z.chain);
