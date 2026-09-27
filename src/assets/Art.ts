@@ -31,6 +31,8 @@ class ArtRegistry {
   /** Era test skins (recoloured copies) → the base key they copy, whose anchor they share. */
   private readonly cloneOf = new Map<string, string>();
   private skin: string | null = null;
+  /** Stand-ins: a key drawn as another (the arena background as tonight's painted night). */
+  private readonly alias = new Map<string, string>();
   readonly missing: string[] = [];
   /** Era skins drawn as recoloured test art (their PNG is not in assets-src yet). */
   readonly testSkins: string[] = [];
@@ -75,8 +77,16 @@ class ArtRegistry {
     return this.real.has(key);
   }
 
-  /** The key that is actually drawn for `key`: the era's skin first, then a real fallback pose. */
+  /** Draws `key` as `target` from now on (null clears it). Set before building a scene. */
+  setAlias(key: string, target: string | null): void {
+    if (target === null) this.alias.delete(key);
+    else this.alias.set(key, target);
+    this.anchors.clear();
+  }
+
+  /** The key that is actually drawn for `key`: its stand-in, the era's skin, then a real fallback pose. */
   resolve(key: string): string {
+    key = this.alias.get(key) ?? key;
     if (this.skin !== null) {
       const s = `${this.skin}_${key}`;
       if (this.real.has(s)) return s;

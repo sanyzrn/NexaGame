@@ -173,6 +173,16 @@ The Derafsh travels through 17 eras of Iranian history, from the Achaemenids thr
 - The full art brief (file names, sizes, prompts for every era) is in [docs/ERA_ASSETS.md](docs/ERA_ASSETS.md); the idea bank is [docs/IDEAS.md](docs/IDEAS.md).
 - `?era=2` (or `?era=parthian`) plays an era without unlocking it.
 
+## Surprises: history, weather, moods and gaits
+
+No two runs play alike:
+
+- **Moods** (`src/data/moods.ts`): every run draws a time of day / season (day, dawn, sunset, night, winter, autumn, overcast), with a runtime look and optional painted arena variants (`bg_arena_night.png`, per era `e2_bg_arena_night.png`…, lazily loaded). `?mood=night` forces one.
+- **Weather** (`src/data/weather.ts`, `src/render/Sky.ts`): rain, storm, sandstorm, snow, fog and thunder roll in mid-run and change the fight (hidden field, wind, weak fire, slowed enemies, lightning strikes). `?weather=storm` forces one from wave 2.
+- **Historical events** (`src/data/eraEvents.ts`): each era has real political headlines («فرمان کوروش»، «قیام مزدک»، «فرمان مشروطه»…) that fire at random with a gameplay effect. `?event=1` forces one per wave.
+- **Gaits** (`src/systems/gaits.ts`): every enemy draws one of nine movement styles (zigzag, serpent, dash, strafe, hop, flank, spiral, hesitant, march), with more variety wave by wave.
+- The surprise director (`src/systems/director.ts`) keeps the first wave clean and caps surprises per run.
+
 ## Tuning: `src/config/balance.ts`
 
 All gameplay numbers live in `src/config/balance.ts`. Times are in ms and distances in design px (the canvas is 1080×1920).

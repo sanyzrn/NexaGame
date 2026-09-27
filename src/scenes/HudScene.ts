@@ -40,6 +40,7 @@ const Z = { stream: 12, top: 15, chain: 16, toast: 20, spark: 24, banner: 30, ti
  * (PauseScene), which pauses this one too, so the teammates freeze with the world.
  */
 export class HudScene extends Phaser.Scene {
+  private headline: Phaser.GameObjects.Container | null = null;
   private gameScene!: GameScene;
   private session: GroupSession | null = null;
   private joinToken = 0;
@@ -98,6 +99,7 @@ export class HudScene extends Phaser.Scene {
     this.gameScene = this.scene.get('Game') as GameScene;
     this.ended = false;
     this.skip = null;
+    this.headline = null;
     this.playerGroupDamage = 0;
     this.cameras.main.setAlpha(data?.hidden ? 0 : 1);
     this.bar = null;
@@ -424,6 +426,51 @@ export class HudScene extends Phaser.Scene {
       onComplete: () => t.setVisible(false),
     });
     this.tweens.add({ targets: this.toastShine, x: 520, alpha: { from: 0.7, to: 0 }, duration: 700, delay: 260, ease: 'Sine.easeInOut' });
+  }
+
+  // ---------------------------------------------------------------- headlines
+
+  /**
+   * A breaking-news strip for history and weather: a dark lacquer band with a coloured kicker
+   * («رویداد تاریخی · ۵۳۹ پ.م»), the headline in large type and what it does in one line. It slides
+   * in from the right (RTL reading start), holds, and slides out. A newer headline replaces it.
+   */
+  showHeadline(kicker: string, title: string, line: string, color: number): void {
+    this.headline?.destroy();
+    const w = 960;
+    const h = 210;
+    const y = 470 + this.safeTop;
+    const hex = `#${color.toString(16).padStart(6, '0')}`;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.35).fillRoundedRect(-w / 2 + 6, -h / 2 + 10, w, h, 26);
+    bg.fillStyle(0x0c1230, 0.94).fillRoundedRect(-w / 2, -h / 2, w, h, 26);
+    bg.fillStyle(color, 1).fillRoundedRect(w / 2 - 16, -h / 2, 16, h, { tl: 0, tr: 26, bl: 0, br: 26 });
+    bg.lineStyle(4, color, 0.9).strokeRoundedRect(-w / 2, -h / 2, w, h, 26);
+    const k = this.add.text(w / 2 - 44, -h / 2 + 34, kicker, {
+      fontFamily: FONT_FAMILY, fontSize: '26px', fontStyle: '900', color: hex, rtl: true,
+    }).setOrigin(1, 0.5);
+    const t = gradientText(this.add.text(w / 2 - 44, -8, title, {
+      fontFamily: FONT_FAMILY, fontSize: '58px', fontStyle: '900', rtl: true, stroke: '#05060c', strokeThickness: 6,
+    }).setOrigin(1, 0.5));
+    if (t.width > w - 90) t.setScale((w - 90) / t.width);
+    const l = this.add.text(w / 2 - 44, h / 2 - 38, line, {
+      fontFamily: FONT_FAMILY, fontSize: '30px', fontStyle: '700', color: '#e8ecff', rtl: true,
+    }).setOrigin(1, 0.5);
+    if (l.width > w - 90) l.setScale((w - 90) / l.width);
+    const c = this.add.container(DESIGN_W + w, y, [bg, k, t, l]).setDepth(Z.banner);
+    this.headline = c;
+    services.audio.play('horn', 0.6);
+    this.tweens.chain({
+      targets: c,
+      tweens: [
+        { x: DESIGN_W / 2, duration: 420, ease: 'Back.easeOut' },
+        { x: -w, duration: 380, delay: 2900, ease: 'Cubic.easeIn' },
+      ],
+      onComplete: () => {
+        c.destroy();
+        if (this.headline === c) this.headline = null;
+      },
+    });
   }
 
   // ---------------------------------------------------------------- boss bar

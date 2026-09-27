@@ -3,6 +3,7 @@ import { BALANCE } from '../config/balance';
 import { ARENA } from '../data/arena';
 import { WAVES, scheduleWave, type ScheduledSpawn, type WaveDef } from '../data/waves';
 import { Enemy, type EnemyHooks, type EnemyWorld, type SpawnOptions } from '../entities/Enemy';
+import { pickGait } from './gaits';
 import { Signal } from '../utils/Signal';
 
 export interface WaveInfo {
@@ -102,7 +103,7 @@ export class WaveSystem {
     for (let i = 0; i < count; i++) {
       const pt = points[(start + i) % points.length];
       const type = types[i % types.length];
-      this.freeEnemy().spawn(type, pt.x + Phaser.Math.Between(-30, 30), this.hpScale, pt.y, { speedMul: this.mods.speedMul });
+      this.freeEnemy().spawn(type, pt.x + Phaser.Math.Between(-30, 30), this.hpScale, pt.y, { speedMul: this.mods.speedMul, gait: pickGait(type, 0.6) });
     }
   }
 
@@ -131,6 +132,11 @@ export class WaveSystem {
     }
   }
 
+  /** Chance an enemy walks anything but a straight march: learn it first, then it gets inventive. */
+  private get variety(): number {
+    return Math.min(0.85, 0.3 + 0.18 * Math.max(0, this.info.index));
+  }
+
   private begin(): void {
     const info = this.info;
     info.index++;
@@ -155,6 +161,6 @@ export class WaveSystem {
   private spawn(s: ScheduledSpawn): void {
     const m = BALANCE.waves.sideMargin;
     const x = ARENA.walls.left + m + s.x * (ARENA.walls.right - ARENA.walls.left - m * 2);
-    this.freeEnemy().spawn(s.type, x, this.hpScale, undefined, { elite: s.elite, speedMul: this.mods.speedMul });
+    this.freeEnemy().spawn(s.type, x, this.hpScale, undefined, { elite: s.elite, speedMul: this.mods.speedMul, gait: pickGait(s.type, this.variety) });
   }
 }

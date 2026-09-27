@@ -79,6 +79,8 @@ export class PreloadScene extends Phaser.Scene {
       if (def.lazy && pack.images.some((i) => i.key === def.key)) continue;
       // Missing era skins become recoloured test art only when that era is played (applyEraArt).
       if (def.skinOf) continue;
+      // Mood backgrounds exist only as real art (the runtime grade stands in otherwise).
+      if (def.optional) continue;
       // Lazy atlas frames (the boss) get their placeholder NOW too: the Boss entity is built the
       // moment the game scene boots, and the real texture swaps in when the lazy load lands.
       createPlaceholder(this, def);

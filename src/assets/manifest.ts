@@ -34,6 +34,8 @@ export interface AssetDef {
   ph: { kind: PlaceholderKind; pose?: string };
   /** An era skin of this base key: while its PNG is missing, a recoloured copy of the base is shown. */
   skinOf?: string;
+  /** Used only when the real PNG exists (no placeholder, no test art): the arena mood backgrounds. */
+  optional?: boolean;
 }
 
 const char = (key: string, size: number, atlas: AtlasGroup, kind: PlaceholderKind, pose: string, ox = 0.5, oy = 0.9): AssetDef =>
@@ -41,6 +43,9 @@ const char = (key: string, size: number, atlas: AtlasGroup, kind: PlaceholderKin
 
 const ui = (key: string, w: number, h: number, kind: PlaceholderKind, pose?: string): AssetDef =>
   ({ key, w, h, ox: 0.5, oy: 0.5, atlas: 'propsui', alpha: true, ph: { kind, pose } });
+
+/** Mood background keys (keep in sync with data/moods.ts — a unit test checks). */
+export const MOOD_BGS: readonly string[] = ['bg_arena_dawn', 'bg_arena_sunset', 'bg_arena_night', 'bg_arena_winter', 'bg_arena_autumn', 'bg_arena_overcast'];
 
 const BASE: readonly AssetDef[] = [
   // Background
@@ -107,6 +112,9 @@ const BASE: readonly AssetDef[] = [
   ui('ui_toast_frame', 640, 160, 'toast'),
   ui('ui_combo_badge', 256, 256, 'comboBadge'),
 
+  // Arena moods (data/moods.ts): painted variants of the arena, used when present, loaded on demand.
+  ...MOOD_BGS.map((key): AssetDef => ({ key, w: 1080, h: 1920, ox: 0, oy: 0, atlas: null, alpha: false, lazy: true, optional: true, ph: { kind: 'bg' } })),
+
   // Share card
   { key: 'card_bg', w: 1080, h: 1920, ox: 0, oy: 0, atlas: null, alpha: false, lazy: true, ph: { kind: 'card' } },
 ];
@@ -116,7 +124,7 @@ const BASE: readonly AssetDef[] = [
  * (same size and anchor as the base); gameplay code keeps using the base key.
  */
 export const SKINNABLE_KEYS: readonly string[] = [
-  'bg_arena_01',
+  'bg_arena_01', ...MOOD_BGS,
   'hero_idle', 'hero_draw', 'hero_full', 'hero_hurt',
   'imp_walk_1', 'imp_walk_2', 'imp_hit',
   'shield_walk_1', 'shield_walk_2', 'shield_hit',

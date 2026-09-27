@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Art } from '../assets/Art';
 import { ensureAtlas } from '../assets/lazy';
 import { applyEraArt } from '../assets/eraSkins';
+import { applyMood } from '../assets/moodArt';
 import { setPlaceholderLabels } from '../assets/placeholders';
 import { BALANCE } from '../config/balance';
 import { DEPTH, DESIGN_H, DESIGN_W } from '../config/display';
@@ -36,6 +37,9 @@ import { Volley } from '../systems/Volley';
 import { Powers } from '../systems/Powers';
 import { PowerMeter } from '../systems/powerMeter';
 import { Surprises } from '../systems/Surprises';
+import { Happenings } from '../systems/Happenings';
+import { pickGait } from '../systems/gaits';
+import type { MoodDef } from '../data/moods';
 import { completeEra, currentEra, unlockedIndex } from '../systems/eraProgress';
 import { readStartParam } from '../services/links';
 import { WaveSystem, type WaveInfo } from '../systems/WaveSystem';
@@ -148,6 +152,11 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private era!: EraDef;
   /** The era's rule combined with the day's omen. */
   private rules: OmenMods = {};
+  /** The run's time of day / season (data/moods.ts). */
+  private mood!: MoodDef;
+  /** Weather, historical events and the sky (systems/Happenings.ts). */
+  private happenings!: Happenings;
+  private moodPainted = false;
   private readonly moments = new Moments();
   private tripleShots = 0;
   private staggerLeft = 0;
@@ -190,6 +199,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     // would test against the previous run's (destroyed) enemies and pots.
     this.targets.length = 0;
     this.fireZones.length = 0;
+    this.world.timeMul = 1;
     setFireMul(1);
     // The omen of the day (same for the whole group; ?omen=<id> overrides, ?omen= turns it off).
     this.omen = pickOmen(new Date(), new URLSearchParams(window.location.search).get('omen'));
@@ -197,6 +207,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     const diff = services.settings.difficulty;
     this.rules = combineMods(combineMods(this.era.mods, this.omen?.mods), { enemySpeedMul: diff.enemySpeedMul, scoreMul: diff.scoreMul });
     applyEraArt(this, this.era);
+    const moodPick = applyMood(this, this.era);
+    this.mood = moodPick.mood;
+    this.rules = combineMods(this.rules, this.mood.mods);
 
     this.timeCtl = new TimeCtl(this);
     // Camera moves (intro push-in, the finisher's flight) never show past the arena's edges.
@@ -242,6 +255,63 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
     this.scene.launch('Hud', { hidden: this.mode === 'title' });
     const hud = (this.hud = this.scene.get('Hud') as HudScene);
+    // The mood drains colour (snow, grey skies, night) unless it has its own painted arena.
+    this.moodPainted = moodPick.painted;
+    if (this.restDesat() > 0) this.atmosphere.desaturate(this.restDesat(), 0);
+    this.happenings = new Happenings(this, this.era, this.mood, this.decor.flames(), moodPick.painted, {
+      enemies: () => this.waves.enemies,
+      hero: () => ({ x: this.hero.bowX, y: this.hero.bowY }),
+      canSurprise: () => this.mode === 'play' && !this.tutorial && !this.reachedBoss && !this.ended && !this.defeated && !this.finisher && !this.rescuing,
+      headline: (k, t, l, c) => this.hud.showHeadline(k, t, l, c),
+      baseDrift: () => this.rules.arrowDriftDegPerSec ?? 0,
+      baseFire: () => this.rules.fireMul ?? 1,
+      setDrift: (d) => { this.projectiles.driftDegPerSec = d; },
+      setFire: (m) => {
+        setFireMul(m);
+        this.decor.fireMul = m;
+      },
+      setEnemyTime: (m) => { this.world.timeMul = m; },
+      decree: () => {
+        this.waves.clearAll(this.hero.bowX, this.hero.bowY, 1.4);
+        this.fx.flashTo(0.35, 260);
+        services.audio.play('shockwave');
+        services.haptics.play('heavy');
+      },
+      treasury: () => {
+        this.bonusScore += 400;
+        this.meter.addRaw(0.3);
+        this.fx.coinBurst(DESIGN_W / 2, 900, 16);
+        services.audio.play('pip');
+      },
+      blessing: () => {
+        if (this.hearts < services.settings.difficulty.hearts) {
+          this.hearts++;
+          this.hud.setHearts(this.hearts);
+          services.audio.play('heartFill');
+        } else {
+          this.bonusScore += 250;
+        }
+      },
+      reinforcements: () => {
+        this.tripleShots = Math.min(BALANCE.triple.max, this.tripleShots + BALANCE.triple.charges);
+        this.hud.setTriple(this.tripleShots);
+        services.audio.play('triple');
+      },
+      uprising: () => {
+        const n = 4 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < n; i++) {
+          const x = ARENA.walls.left + 120 + Math.random() * (ARENA.walls.right - ARENA.walls.left - 240);
+          this.time.delayedCall(i * 260, () => {
+            // The band stops arriving if the boss rose, the run ended or a cutscene began meanwhile.
+            if (this.reachedBoss || this.ended || this.finisher || this.rescuing) return;
+            this.waves.spawnOne('imp', x, undefined, { gait: pickGait('imp', 1), speedMul: this.rules.enemySpeedMul });
+          });
+        }
+        this.bonusScore += 200;
+        services.audio.play('horn');
+      },
+      struck: (e, damage, killed) => this.powerHitEnemy(e, damage, killed ? 'kill' : 'hit'),
+    });
     this.powers = new Powers(this, {
       fx, timeCtl: this.timeCtl, atmosphere: this.atmosphere, hero: this.hero, boss: this.boss, decor: this.decor,
       projectiles: this.projectiles,
@@ -419,6 +489,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     // ---- waves & boss ----
     this.waves.onWaveStart.add((w) => {
       this.announceWave(w);
+      this.happenings.waveStarted(w.index);
       this.maybeGoldenImp();
     });
     this.waves.onAllCleared.add(() => this.time.delayedCall(1200, () => this.startBossIntro()));
@@ -626,6 +697,11 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
         services.audio.play('omen');
       });
     }
+    // The time of day / season, once the other toasts have gone.
+    if (this.mood.id !== 'day') {
+      const delay = (eraToast ? 2400 : 0) + (o ? 2400 : 0);
+      this.time.delayedCall(delay, () => this.hud.showToast(`حال‌وهوا: ${this.mood.name}`, this.mood.line));
+    }
   }
 
   /** A victory opens the next era; returned only the first time (then the time jump is offered). */
@@ -633,6 +709,11 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     const before = unlockedIndex();
     const next = completeEra(this.era);
     return next && unlockedIndex() > before ? next : null;
+  }
+
+  /** The world's resting saturation: the mood drains colour unless it has its own painted arena. */
+  private restDesat(): number {
+    return this.moodPainted ? 0 : this.mood.desat;
   }
 
   /** The colour grade over the run: the era's own light first, else the day's omen. */
@@ -695,6 +776,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.world.aimDY = aim.dirY;
 
     this.atmosphere.update(realMs);
+    this.happenings.update(dt, this.mode === 'play' && !this.ended);
     this.decor.update(dt);
     this.boss.update(dt);
     this.simorgh.update(dt);
@@ -728,6 +810,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private startBossIntro(): void {
     if (this.defeated) return;
     this.reachedBoss = true;
+    // Clear skies for the boss: the finale is his, not the weather's.
+    this.happenings.calm();
     const I = FEEL.boss.intro;
     const cam = this.cameras.main;
     const { audio } = services;
@@ -1125,7 +1209,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if (full && this.atmosphere.fxAllowed) arrow.preFX?.addGlow(0xffe070, 6, 0, false, 0.1, 16);
     this.flight = { t: 0, ms: full ? F.flightMs : F.earlyFlightMs, full, x0, y0, arrow, glow, beam, carry: 0, lastX: x0, lastY: y0 };
     // Colour flows back into the world behind the arrow.
-    this.atmosphere.desaturate(0, full ? F.flightMs : 300);
+    this.atmosphere.desaturate(this.restDesat(), full ? F.flightMs : 300);
     this.atmosphere.darken(full ? 0.1 : 0, 600);
   }
 
@@ -1466,7 +1550,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.hud.setHearts(this.hearts);
     this.hero.revive(R.shieldMs);
     this.timeCtl.slowMo(1, 0);
-    this.atmosphere.desaturate(0, 600);
+    this.atmosphere.desaturate(this.restDesat(), 600);
     this.atmosphere.shockwave(1, 700);
     fx.flashTo(0.3, 400);
     fx.ring(x, y, 0xffd24a, 0.4, 9, 800);
@@ -1638,6 +1722,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
   private lose(): void {
     this.defeated = true;
+    this.happenings.calm();
     this.waves.stop();
     this.aim.cancel();
     this.aim.enabled = false;
@@ -1653,6 +1738,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
   /** Gathers the run, reports it, and hands the screen to the Result scene. */
   private async finishRun(won: boolean): Promise<void> {
+    // Clear skies: no weather (or lightning scoring) over the result screen.
+    this.happenings.calm();
+    this.world.timeMul = 1;
     if (this.ended) return;
     this.ended = true;
     services.telegram.closingConfirmation(false);

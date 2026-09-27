@@ -7,6 +7,7 @@ import { ARENA } from '../data/arena';
 import { ENEMIES, SHIELD_DISC, type EnemyDef, type EnemyType } from '../data/entities';
 import { Shadow } from '../render/Shadow';
 import type { ArrowHit, HitOutcome, Target } from '../systems/ProjectileSystem';
+import { newGait, stepGait, type GaitId, type GaitOut, type GaitState } from '../systems/gaits';
 import { clamp, rayCircle } from '../utils/geom';
 
 /** Things enemies make happen in the world (sounds, effects, damage). Implemented by the Game scene. */
@@ -40,6 +41,8 @@ export interface SpawnOptions {
   elite?: boolean;
   /** Walk-speed multiplier (the omen of the day). */
   speedMul?: number;
+  /** How it travels down the arena (see systems/gaits.ts); a straight march when omitted. */
+  gait?: GaitId;
 }
 
 /** What enemies read from the world every frame (filled in place, never reallocated). */
@@ -55,6 +58,8 @@ export interface EnemyWorld {
   aimDY: number;
   /** The omen of the day: no taunts, bangs or scratches. */
   quiet?: boolean;
+  /** Weather's pull on every walker (snow < 1); stacks with each enemy's own slow or haste. */
+  timeMul?: number;
 }
 
 /** The omen of the day can make fire burn hotter (set by GameScene at run start). */
@@ -123,6 +128,10 @@ export class Enemy implements Target {
   private stepPhase = 0;
   private lastStep = 0;
   private seed = 0;
+  private gait: GaitState = newGait('march', 540, 0, 1080);
+  private readonly gaitOut: GaitOut = { forward: 1, side: 0 };
+  /** Forward-speed multiplier from the gait this frame (applied in move()). */
+  private gaitMul = 1;
   private popMul = 1;
   // imp
   private pauseLeft = 0;
@@ -281,6 +290,8 @@ export class Enemy implements Target {
     }
     this.x = x;
     this.y = ARENA.spawnY;
+    this.gait = newGait(opts?.golden ? 'march' : opts?.gait ?? 'march', x, ARENA.walls.left, ARENA.walls.right);
+    this.gaitMul = 1;
     this.speed = BALANCE.enemies[type].speed * (1 + (Math.random() * 2 - 1) * E.walk.speedJitter);
     if (opts?.speedMul) this.speed *= opts.speedMul;
     if (this.elite) this.speed *= BALANCE.elite.speedMul;
@@ -522,7 +533,7 @@ export class Enemy implements Target {
             this.tickBurn(dt);
             if (this.state !== State.Walking) return;
           }
-          this.walk(this.slowLeft > 0 ? dt * this.slowMul : dt, world);
+          this.walk((this.slowLeft > 0 ? dt * this.slowMul : dt) * (world.timeMul ?? 1), world);
         }
         if (this.state !== State.Walking) return;
         if (this.y >= ARENA.attackY && !this.golden && this.type !== 'slinger') this.startLunge(world);
@@ -570,9 +581,13 @@ export class Enemy implements Target {
       if (this.y < ARENA.spawnY - 40) this.escape();
       return;
     }
+    const g = stepGait(this.gait, dt, this.x, ARENA.walls.left, ARENA.walls.right, this.gaitOut);
+    this.gaitMul = g.forward;
     if (this.type === 'flyer') {
       const F = FEEL.flyer;
-      this.y += this.speed * s;
+      this.y += this.speed * s * Math.max(0.15, g.forward);
+      const m = BALANCE.waves.sideMargin + F.zigPx;
+      this.baseX = clamp(this.baseX + g.side * s, ARENA.walls.left + m, ARENA.walls.right - m);
       this.x = this.baseX + Math.sin((this.life / F.zigPeriodMs) * TAU + this.seed) * F.zigPx;
       this.stepPhase += dt / F.flapMs;
       return;
@@ -608,9 +623,9 @@ export class Enemy implements Target {
         this.phase = 'solid';
         this.phaseLeft = W.solidMs;
       }
-      // Drifts down on a slow weave, unhurried.
-      this.y += this.speed * s;
-      this.x += Math.sin((this.life / 2100) * TAU + this.seed) * 72 * s;
+      // Drifts down on a slow weave, unhurried (plus its gait).
+      this.y += this.speed * s * g.forward;
+      this.x += Math.sin((this.life / 2100) * TAU + this.seed) * 72 * s + g.side * s * 0.7;
       this.stepPhase += dt / 640;
       this.x = clamp(this.x, ARENA.walls.left + 40, ARENA.walls.right - 40);
       return;
@@ -670,14 +685,18 @@ export class Enemy implements Target {
       }
       this.updateRaise(dt, world);
     }
+    // The gait's sideways motion (a slinger in position stands still).
+    if (!(this.type === 'slinger' && this.y >= this.stopY)) this.x += g.side * s;
     this.avoidPillars(s);
     const m = BALANCE.waves.sideMargin * 0.6;
     this.x = clamp(this.x, ARENA.walls.left + m, ARENA.walls.right - m);
   }
 
   private move(dy: number, stride: number): void {
-    this.y += dy;
-    this.stepPhase += dy / stride;
+    const d = dy * this.gaitMul;
+    // A step back never retreats past the spawn line.
+    this.y = Math.max(ARENA.spawnY, this.y + d);
+    this.stepPhase += Math.abs(d) / stride;
   }
 
   /** Walkers step around pillar bases instead of through them. */

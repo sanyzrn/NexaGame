@@ -46,7 +46,7 @@ export function applyEraArt(scene: Phaser.Scene, era: EraDef): void {
   }
   if (era.skin !== null) {
     for (const def of MANIFEST) {
-      if (def.skinOf && def.key.startsWith(`${era.skin}_`) && !Art.has(def.key)) createSkinClone(scene.textures, def);
+      if (def.skinOf && !def.optional && def.key.startsWith(`${era.skin}_`) && !Art.has(def.key)) createSkinClone(scene.textures, def);
     }
   }
   Art.setSkin(era.skin);
