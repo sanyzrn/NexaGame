@@ -550,13 +550,36 @@ ERA 17 PALETTE: deep night indigo, hologram cyan, magenta, pearl white, gold lig
 
 ---
 
-## ۲۰. چک‌لیست هر عصر
+## ۲۰. حال‌وهوای میدان — نسخه‌های شب، غروب، برف و… (اختیاری)
+
+هر دست، بازی به‌طور تصادفی یک **حال‌وهوا** انتخاب می‌کند: نیمروز، سپیده‌دم، غروب، شب، زمستان، پاییز یا ابری.
+بدون هیچ تصویر تازه‌ای هم کار می‌کند (رنگ‌آمیزی، تاریکی، کم‌رنگی، ذرات برف، برگ و کرم شب‌تاب را خود بازی می‌سازد). اما اگر **نسخهٔ نقاشی‌شدهٔ زمین** را بسازی، همان جایگزین زمین می‌شود و خیلی زیباتر است.
+
+- اندازه: **1080×1920**، بدون شفافیت، **دقیقاً همان چیدمان `bg_arena_01`** (بخش ۲). بهترین راه: تصویر زمین همان عصر را به‌عنوان مرجع بده و فقط نور، فصل و آسمان را عوض کن.
+- این تصاویر فقط وقتی لازم باشند دانلود می‌شوند، پس حجم بارگذاری اولیه بالا نمی‌رود.
+- نام فایل برای عصر ۱ بدون پیشوند است و برای بقیهٔ عصرها با پیشوند: مثلاً شبِ عصر اشکانی ← `e2_bg_arena_night.png`.
+
+| فایل | حال‌وهوا | پرامپت (بعد از پرامپت ARENA همان عصر) |
+|---|---|---|
+| `bg_arena_dawn` | سپیده‌دم | `At dawn: soft pink and lavender sky light, long cool shadows, thin morning mist lying on the floor, the first golden rays touching the top of the walls, braziers still faintly glowing.` |
+| `bg_arena_sunset` | غروب | `At sunset: deep orange and crimson sky, long purple shadows stretching across the floor, the walls rim-lit in gold, braziers lit and glowing warm.` |
+| `bg_arena_night` | شب | `At night: moonlit deep-blue darkness, a starry sky, braziers and torches casting warm pools of orange light on the floor, strong contrast between fire-lit areas and blue shadows, the central floor still readable.` |
+| `bg_arena_winter` | زمستان | `In winter: snow covering the walls, reliefs and the edges of the floor, icicles on ledges, frost patterns on the tiles, a pale cold blue-white light, braziers glowing warm against the snow; the central floor lightly dusted but readable.` |
+| `bg_arena_autumn` | پاییز | `In autumn: fallen orange and red leaves drifting in the corners and along the walls, amber afternoon light, a few bare branches over the side walls, warm hazy air.` |
+| `bg_arena_overcast` | ابری | `Under a heavy overcast sky: flat grey light, wet darkened stones with puddles in the corners, muted colours, the smell of coming rain.` |
+
+> **آب‌وهوا** (باران، توفان، توفان شن، برف، مه، رعد و برق) کاملاً با کد ساخته می‌شود و تصویری لازم ندارد.
+
+---
+
+## ۲۱. چک‌لیست هر عصر
 
 - [ ] `bg_arena_01` با همان چیدمان (مرجع: عصر ۱)
 - [ ] ۳ ژست غول
 - [ ] ۴ ژست پهلوان (از پشت)
 - [ ] ۱۹ ژست دشمن (imp ۳، shield ۳، flyer ۳، slinger ۴، bomber ۳، wraith ۳)
 - [ ] ۷ شیء میدان
+- [ ] (اختیاری) ۶ نسخهٔ حال‌وهوای زمین: `bg_arena_dawn` · `_sunset` · `_night` · `_winter` · `_autumn` · `_overcast`
 - [ ] `npm run assets` ← `npm run anchors` ← بازی با `?era=N&debug=1` و بررسی hitboxها
 
 > وقتی یک عصر از «به‌زودی» به «قابل بازی» تبدیل می‌شود، در `src/data/eras.ts` برایش `playable: true`، موج‌ها و قانونش را تنظیم کن (مثل عصر اشکانی).

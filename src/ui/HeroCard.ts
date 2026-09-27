@@ -1,8 +1,7 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
-import { MANIFEST_BY_KEY, type PackFile } from '../assets/manifest';
+import { ensureLazy } from '../assets/lazy';
 import { CALLIGRAPHY_FONT, FONT_FAMILY } from '../config/display';
-import { services } from '../services';
 import { faNum, faPercent } from '../utils/fa';
 import { SCHOOLS, type School } from '../config/team';
 import { groupBannerTex, schoolEmblemTex, starPath } from './kit';
@@ -37,27 +36,6 @@ const H = 1920;
 const INNER = { x: 115, y: 407, w: 850, h: 1360 };
 const INK = '#3a1a08';
 const CRIMSON = '#6a1410';
-
-/** Loads a lazy manifest image (card_bg) the first time it's needed; resolves when it's drawable. */
-export function ensureLazy(scene: Phaser.Scene, key: string): Promise<void> {
-  if (Art.has(key)) return Promise.resolve();
-  const pack = scene.registry.get('pack') as PackFile | undefined;
-  const img = pack?.images.find((i) => i.key === key);
-  const def = MANIFEST_BY_KEY.get(key);
-  return new Promise((resolve) => {
-    if (!img || !def) {
-      resolve();
-      return;
-    }
-    const url = `assets/${services.caps.webp ? img.webp : img.fallback}?v=${pack!.version}`;
-    scene.load.image(key, url);
-    scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
-      if (scene.textures.exists(key)) Art.register(key, { texture: key }, true);
-      resolve();
-    });
-    scene.load.start();
-  });
-}
 
 function source(scene: Phaser.Scene, key: string): CanvasImageSource | null {
   if (!scene.textures.exists(key)) return null;

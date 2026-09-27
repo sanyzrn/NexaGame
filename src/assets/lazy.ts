@@ -70,3 +70,30 @@ export function ensureAtlas(scene: Phaser.Scene, group: AtlasGroup): Promise<boo
   inflight.set(group, promise);
   return promise;
 }
+
+/** Loads a lazy standalone manifest image (card_bg, mood backgrounds) the first time it's needed. */
+export function ensureLazy(scene: Phaser.Scene, key: string): Promise<void> {
+  if (Art.has(key)) return Promise.resolve();
+  const pack = scene.registry.get('pack') as PackFile | undefined;
+  const img = pack?.images.find((i) => i.key === key);
+  const def = MANIFEST_BY_KEY.get(key);
+  return new Promise((resolve) => {
+    if (!img || !def) {
+      resolve();
+      return;
+    }
+    const url = `assets/${services.caps.webp ? img.webp : img.fallback}?v=${pack!.version}`;
+    scene.load.image(key, url);
+    scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      if (scene.textures.exists(key)) Art.register(key, { texture: key }, true);
+      resolve();
+    });
+    scene.load.start();
+  });
+}
+
+/** True when a lazy image exists on disk (listed in pack.json). */
+export function hasPackedImage(scene: Phaser.Scene, key: string): boolean {
+  const pack = scene.registry.get('pack') as PackFile | undefined;
+  return !!pack?.images.some((i) => i.key === key);
+}
