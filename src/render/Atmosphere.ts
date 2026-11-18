@@ -23,7 +23,7 @@ export class Atmosphere {
   private readonly shaftPhase: number[] = [];
   private readonly shaftPeriod: number[] = [];
   private readonly motes: Phaser.GameObjects.Particles.ParticleEmitter;
-  private readonly gradeMul: Phaser.GameObjects.Image;
+  private readonly gradeShade: Phaser.GameObjects.Image;
   private readonly gradeAdd: Phaser.GameObjects.Image;
   private readonly dark: Phaser.GameObjects.Rectangle;
   private readonly gold: Phaser.GameObjects.Rectangle;
@@ -36,15 +36,15 @@ export class Atmosphere {
   private shaftBoost = 1;
   private t = 0;
 
-  constructor(private readonly scene: Phaser.Scene, time: TimeCtl) {
-    this.addBackdrop();
+  constructor(private readonly scene: Phaser.Scene, time: TimeCtl, swayBackdrop = true) {
+    this.addBackdrop(swayBackdrop);
 
     // Oversized by a margin so camera shake never reveals an ungraded strip at the edges.
     const m = 24;
     const cover = (key: string, blend: Phaser.BlendModes, depth: number) =>
       scene.add.image(-m, -m, key).setOrigin(0).setDisplaySize(DESIGN_W + m * 2, DESIGN_H + m * 2)
         .setBlendMode(blend).setDepth(depth).setScrollFactor(0);
-    this.gradeMul = cover('fx_grade_mul', Phaser.BlendModes.MULTIPLY, DEPTH.grade);
+    this.gradeShade = cover('fx_grade_shade', Phaser.BlendModes.NORMAL, DEPTH.grade);
     this.gradeAdd = cover('fx_grade_add', Phaser.BlendModes.ADD, DEPTH.grade + 1);
     this.dark = scene.add.rectangle(-m, -m, DESIGN_W + m * 2, DESIGN_H + m * 2, 0x05030a, 1).setOrigin(0)
       .setScrollFactor(0).setDepth(DEPTH.grade + 2).setAlpha(0);
@@ -180,7 +180,7 @@ export class Atmosphere {
   flood(ms: number): void {
     const tw = this.scene.tweens;
     tw.add({ targets: this.dark, alpha: 0, duration: ms * 0.3 });
-    tw.add({ targets: this.gradeMul, alpha: 0.25, duration: ms, ease: 'Sine.easeOut' });
+    tw.add({ targets: this.gradeShade, alpha: 0.25, duration: ms, ease: 'Sine.easeOut' });
     tw.add({ targets: this.gold, alpha: { from: 0.55, to: 0.12 }, duration: ms, ease: 'Cubic.easeOut' });
     tw.add({ targets: this, shaftBoost: 2.4, duration: ms, ease: 'Sine.easeOut' });
     this.gradeAdd.setAlpha(1);
@@ -198,11 +198,11 @@ export class Atmosphere {
     this.motes.frequency = lifeAvg / n;
   }
 
-  private addBackdrop(): void {
+  private addBackdrop(sway: boolean): void {
     const scene = this.scene;
     const ref = Art.ref('bg_arena_01');
     const webgl = scene.game.renderer.type === Phaser.WEBGL;
-    if (!webgl || ref.frame !== undefined) {
+    if (!sway || !webgl || ref.frame !== undefined) {
       Art.image(scene, 0, 0, 'bg_arena_01').setDepth(DEPTH.bg);
       return;
     }

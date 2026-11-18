@@ -151,7 +151,7 @@ class Banner implements Animated {
 
   constructor(scene: Phaser.Scene, d: DecorDef) {
     this.body = new BendSprite(scene, d.x, d.y, 'banner', { pin: 'top', rows: 7 });
-    const r = this.body.rope.setScale(d.scale);
+    const r = this.body.view.setScale(d.scale);
     if (d.flip) this.body.setMirror(true);
     // Hangs on the side walls: sort by its bottom edge.
     r.setDepth(worldDepth(d.y + 400 * d.scale));
@@ -166,7 +166,7 @@ class Banner implements Animated {
     const p = (this.t / this.period) * Math.PI * 2;
     const b = this.body;
     const g = WIND.gust;
-    b.rope.setRotation(Phaser.Math.DegToRad(B.swayDeg) * (Math.sin(p) + g * (2 + Math.sin(this.t / 90))));
+    b.view.setRotation(Phaser.Math.DegToRad(B.swayDeg) * (Math.sin(p) + g * (2 + Math.sin(this.t / 90))));
     b.sway = B.tailPx * (Math.sin(p - 0.9) + g * (4 + 2 * Math.sin(this.t / 70)));
     b.wave = B.billow * (1 + g * 4);
     b.wavePhase = p * 1.6 + (g * this.t) / 60;

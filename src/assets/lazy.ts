@@ -71,25 +71,38 @@ export function ensureAtlas(scene: Phaser.Scene, group: AtlasGroup): Promise<boo
   return promise;
 }
 
-/** Loads a lazy standalone manifest image (card_bg, mood backgrounds) the first time it's needed. */
+/** A scene can request the same background more than once while Phaser is still loading it. */
+const pendingImages = new WeakMap<Phaser.Loader.LoaderPlugin, Map<string, Promise<void>>>();
+
+/** Loads a lazy standalone image the first time it's needed. */
 export function ensureLazy(scene: Phaser.Scene, key: string): Promise<void> {
-  if (Art.has(key)) return Promise.resolve();
+  if (Art.isReal(key)) return Promise.resolve();
   const pack = scene.registry.get('pack') as PackFile | undefined;
   const img = pack?.images.find((i) => i.key === key);
-  const def = MANIFEST_BY_KEY.get(key);
-  return new Promise((resolve) => {
-    if (!img || !def) {
-      resolve();
-      return;
-    }
-    const url = `assets/${services.caps.webp ? img.webp : img.fallback}?v=${pack!.version}`;
-    scene.load.image(key, url);
-    scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
+  if (!pack || !img) return Promise.resolve();
+  const loader = scene.load;
+  let pending = pendingImages.get(loader);
+  if (!pending) {
+    pending = new Map();
+    pendingImages.set(loader, pending);
+  }
+  const existing = pending.get(key);
+  if (existing) return existing;
+  const url = `assets/${services.caps.webp ? img.webp : img.fallback}?v=${pack.version}`;
+  const task = new Promise<void>((resolve) => {
+    const finish = () => {
+      loader.off(Phaser.Loader.Events.COMPLETE, finish);
+      scene.events.off(Phaser.Scenes.Events.SHUTDOWN, finish);
       if (scene.textures.exists(key)) Art.register(key, { texture: key }, true);
       resolve();
-    });
-    scene.load.start();
-  });
+    };
+    loader.once(Phaser.Loader.Events.COMPLETE, finish);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, finish);
+    loader.image(key, url);
+  }).finally(() => pending.delete(key));
+  pending.set(key, task);
+  loader.start();
+  return task;
 }
 
 /** True when a lazy image exists on disk (listed in pack.json). */

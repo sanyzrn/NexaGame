@@ -215,7 +215,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     // Camera moves (intro push-in, the finisher's flight) never show past the arena's edges.
     this.cameras.main.setBounds(0, 0, DESIGN_W, DESIGN_H);
     const fx = (this.fx = new FX(this, this.timeCtl));
-    this.atmosphere = new Atmosphere(this, this.timeCtl);
+    this.atmosphere = new Atmosphere(this, this.timeCtl, this.era.skin === null);
     this.boss = new Boss(this, this.timeCtl);
     this.decor = new Decor(this, this.timeCtl, ARENA.decor, ARENA.pillars);
     this.collider = new ArenaCollider(ARENA.walls, ARENA.pillars.map((p) => ({
@@ -527,7 +527,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.aim.enabled = false;
     this.dusk = this.add.image(-40, -40, vGradientTex(this, 'ui_grad_title_dusk', D.top, D.mid, D.bottom))
       .setOrigin(0).setDisplaySize(DESIGN_W + 80, DESIGN_H + 80).setScrollFactor(0)
-      .setBlendMode(Phaser.BlendModes.MULTIPLY).setDepth(DEPTH.grade + 2.5).setAlpha(D.alpha);
+      .setDepth(DEPTH.grade + 2.5).setAlpha(D.alpha);
     this.atmosphere.darken(D.darken, 10);
     this.boss.silhouette = 1;
     this.titleEyes = this.boss.eyeGlows.map(() => this.add.image(0, 0, 'fx_glow').setTint(0xff4a1a)

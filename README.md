@@ -166,10 +166,10 @@ See [assets-src/README.md](assets-src/README.md) for the exact filenames, sizes 
 The Derafsh travels through 17 eras of Iranian history, from the Achaemenids through the Parthian, Sasanian, Samanid, Ghaznavid, Seljuk, Khwarazmian, Ilkhanid, Timurid, Safavid, Afsharid, Zand, Qajar, Constitutional and Pahlavi eras to the contemporary era and the future. Beating an era's boss opens the next one; a time-jump cinematic carries the player there.
 
 - **Title menu:** «نبرد!», an info line (era · year · difficulty), «⏳ زمان‌ها» (the era wall) and «⚔ سختی» (the difficulty picker). Pause and Result both have a way back to the main menu.
-- **Era wall** (`EraSelectScene`): a scrolling grid of cards. Open eras are in colour, locked eras show how they open, and eras still being built are grey «به‌زودی».
+- **Era wall** (`EraSelectScene`): a scrolling grid of cards with a preview of each era's battlefield. Locked cards explain how they open and upcoming chapters are marked «به‌زودی».
 - Eras are data in `src/data/eras.ts` (names, year, place, boss, one signature rule, hp scales, waves). Eras 1–2 are playable.
 - **Difficulty** (`src/data/difficulty.ts`): آسان / معمولی / سخت / افسانه‌ای changes hearts, enemy hp and speed, boss hp and the score multiplier; saved on the device.
-- Era N re-skins every sprite through `Art` with the prefix `eN_` (e.g. `assets-src/e2_hero_idle.png`), with no code changes. Missing era art is shown as recoloured **test art**; each era's atlas is loaded only when that era is played.
+- Each era has its own arena painting. The game loads the active era's full battlefield and fetches small card previews only when the era wall opens. Era N re-skins sprites through `Art` with the prefix `eN_` (e.g. `assets-src/e2_hero_idle.png`); missing sprite skins use recoloured **test art**.
 - The full art brief (file names, sizes, prompts for every era) is in [docs/ERA_ASSETS.md](docs/ERA_ASSETS.md); the idea bank is [docs/IDEAS.md](docs/IDEAS.md).
 - `?era=2` (or `?era=parthian`) plays an era without unlocking it.
 

@@ -27,16 +27,18 @@ export const ART_ANCHORS: Readonly<Record<string, { ox: number; oy: number; flip
   hero_idle: { ox: 0.502, oy: 0.928 },
   hero_draw: { ox: 0.52, oy: 0.883 },
   hero_full: { ox: 0.522, oy: 0.934 },
-  imp_walk_1: { ox: 0.494, oy: 0.965 },
-  imp_walk_2: { ox: 0.504, oy: 0.969 },
+  hero_hurt: { ox: 0.5, oy: 478 / 512 },
+  imp_walk_1: { ox: 0.5, oy: 246 / 256 },
+  imp_pass_1: { ox: 0.5, oy: 246 / 256 },
+  imp_walk_2: { ox: 0.5, oy: 246 / 256 },
+  imp_pass_2: { ox: 0.5, oy: 246 / 256 },
   imp_hit: { ox: 0.568, oy: 0.934 },
-  // walk_1 is drawn mirrored (shield in the left hand): flip it so the shield stays on the right.
-  shield_walk_1: { ox: 0.459, oy: 0.979, flip: true },
-  shield_walk_2: { ox: 0.541, oy: 0.982 },
+  // The four walk poses share a planted-foot line and keep the shield on the right.
+  shield_walk_1: { ox: 0.5, oy: 375 / 384 },
+  shield_pass_1: { ox: 0.5, oy: 375 / 384 },
+  shield_walk_2: { ox: 0.5, oy: 375 / 384 },
+  shield_pass_2: { ox: 0.5, oy: 375 / 384 },
   shield_hit: { ox: 0.516, oy: 0.974 },
-  flyer_up: { ox: 0.521, oy: 0.5 },
-  flyer_down: { ox: 0.491, oy: 0.5 },
-  flyer_hit: { ox: 0.55, oy: 0.5 },
 };
 
 /**
@@ -45,12 +47,23 @@ export const ART_ANCHORS: Readonly<Record<string, { ox: number; oy: number; flip
  */
 export const POSE_FALLBACK: Readonly<Record<string, string>> = {
   hero_hurt: 'hero_idle',
+  imp_pass_1: 'imp_walk_1',
+  imp_pass_2: 'imp_walk_2',
   imp_hit: 'imp_walk_1',
+  shield_pass_1: 'shield_walk_1',
+  shield_pass_2: 'shield_walk_2',
   shield_hit: 'shield_walk_2',
+  flyer_mid: 'flyer_up',
   flyer_hit: 'flyer_up',
+  slinger_pass_1: 'slinger_walk_1',
+  slinger_pass_2: 'slinger_walk_2',
+  slinger_idle: 'slinger_walk_1',
   slinger_hit: 'slinger_walk_1',
   slinger_throw: 'slinger_walk_1',
+  bomber_pass_1: 'bomber_walk_1',
+  bomber_pass_2: 'bomber_walk_2',
   bomber_hit: 'bomber_walk_1',
+  wraith_mid: 'wraith_walk_1',
   wraith_hit: 'wraith_walk_1',
   boss_roar: 'boss_idle',
   boss_stunned: 'boss_idle',
@@ -85,7 +98,7 @@ export const PROPS = {
 } as const;
 
 export interface EnemyDef {
-  poses: { walk: readonly string[]; hit: string; throw?: string };
+  poses: { walk: readonly string[]; hit: string; idle?: string; throw?: string };
   scale: number;
   hitbox: CircleBox;
   /** Health bar centre, relative to the anchor (tight above the head). */
@@ -97,7 +110,7 @@ export interface EnemyDef {
 
 export const ENEMIES = {
   imp: {
-    poses: { walk: ['imp_walk_1', 'imp_walk_2'], hit: 'imp_hit' },
+    poses: { walk: ['imp_walk_1', 'imp_pass_1', 'imp_walk_2', 'imp_pass_2'], hit: 'imp_hit' },
     scale: 0.48,
     hitbox: circle(0, -56, 46),
     hpBar: { y: -126, w: 84 },
@@ -105,7 +118,7 @@ export const ENEMIES = {
     color: 0xc77dff,
   },
   shield: {
-    poses: { walk: ['shield_walk_1', 'shield_walk_2'], hit: 'shield_hit' },
+    poses: { walk: ['shield_walk_1', 'shield_pass_1', 'shield_walk_2', 'shield_pass_2'], hit: 'shield_hit' },
     scale: 0.6,
     hitbox: circle(0, -110, 72),
     hpBar: { y: -232, w: 120 },
@@ -113,7 +126,7 @@ export const ENEMIES = {
     color: 0xffb347,
   },
   flyer: {
-    poses: { walk: ['flyer_up', 'flyer_down'], hit: 'flyer_hit' },
+    poses: { walk: ['flyer_up', 'flyer_mid', 'flyer_down', 'flyer_mid'], hit: 'flyer_hit' },
     scale: 0.62,
     hitbox: circle(0, 6, 50),
     hpBar: { y: -98, w: 90 },
@@ -121,7 +134,10 @@ export const ENEMIES = {
     color: 0xe0629a,
   },
   slinger: {
-    poses: { walk: ['slinger_walk_1', 'slinger_walk_2'], hit: 'slinger_hit', throw: 'slinger_throw' },
+    poses: {
+      walk: ['slinger_walk_1', 'slinger_pass_1', 'slinger_walk_2', 'slinger_pass_2'],
+      idle: 'slinger_idle', hit: 'slinger_hit', throw: 'slinger_throw',
+    },
     scale: 0.52,
     hitbox: circle(0, -64, 48),
     hpBar: { y: -142, w: 92 },
@@ -129,7 +145,7 @@ export const ENEMIES = {
     color: 0xa8c46a,
   },
   bomber: {
-    poses: { walk: ['bomber_walk_1', 'bomber_walk_2'], hit: 'bomber_hit' },
+    poses: { walk: ['bomber_walk_1', 'bomber_pass_1', 'bomber_walk_2', 'bomber_pass_2'], hit: 'bomber_hit' },
     scale: 0.6,
     hitbox: circle(0, -92, 64),
     hpBar: { y: -196, w: 110 },
@@ -137,7 +153,7 @@ export const ENEMIES = {
     color: 0x7ad84a,
   },
   wraith: {
-    poses: { walk: ['wraith_walk_1', 'wraith_walk_2'], hit: 'wraith_hit' },
+    poses: { walk: ['wraith_walk_1', 'wraith_mid', 'wraith_walk_2', 'wraith_mid'], hit: 'wraith_hit' },
     scale: 0.56,
     hitbox: circle(0, -78, 50),
     hpBar: { y: -172, w: 88 },

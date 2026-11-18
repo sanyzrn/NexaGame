@@ -1,4 +1,7 @@
 import Phaser from 'phaser';
+import { Art } from '../assets/Art';
+import { ensureLazy, hasPackedImage } from '../assets/lazy';
+import { arenaPreviewKey } from '../assets/manifest';
 import { CALLIGRAPHY_FONT, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { ERAS, type EraDef } from '../data/eras';
 import { services } from '../services';
@@ -8,7 +11,7 @@ import { faNum } from '../utils/fa';
 
 const COLS = 2;
 const CARD_W = 480;
-const CARD_H = 330;
+const CARD_H = 384;
 const GAP_X = 36;
 const GAP_Y = 34;
 const TOP = 400;
@@ -19,8 +22,8 @@ type CardState = 'current' | 'open' | 'locked' | 'soon';
 /**
  * سفر در زمان — the era picker: a scrolling two-column wall of cards, one per era, from the
  * Achaemenids to the future. Open eras glow in their own colour (the chosen one wears a gold
- * ring); eras not yet reached show a lock and how they open; eras still being built are grey
- * «به‌زودی» cards — a promise of the whole journey. Drag to scroll, tap a card to travel there.
+ * ring). Every card shows its arena, even when the chapter is still being built.
+ * Drag or scroll the list, then tap an open card to travel there.
  *
  * Opened over the Title; `onPick(index)` switches the era (the Title rebuilds the arena).
  */
@@ -112,6 +115,10 @@ export class EraSelectScene extends Phaser.Scene {
       const i = this.cardAt(p.x, p.y - this.list.y);
       if (i >= 0) this.tap(i);
     });
+    this.input.on(Phaser.Input.Events.POINTER_WHEEL, (_p: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
+      this.vel = 0;
+      this.list.y = Phaser.Math.Clamp(this.list.y - dy, this.minY, this.maxY);
+    });
   }
 
   update(_t: number, delta: number): void {
@@ -162,17 +169,26 @@ export class EraSelectScene extends Phaser.Scene {
     // Body: dark lacquer with the era's colour band on top.
     g.fillStyle(0x000000, 0.35).fillRoundedRect(-w / 2 + 6, -h / 2 + 10, w, h, 28);
     g.fillStyle(lit ? 0x141c3c : 0x1c1e26, 0.96).fillRoundedRect(-w / 2, -h / 2, w, h, 28);
-    g.fillStyle(tint, lit ? 0.9 : 0.55).fillRoundedRect(-w / 2, -h / 2, w, 92, { tl: 28, tr: 28, bl: 0, br: 0 });
+    g.fillStyle(tint, lit ? 0.8 : 0.55).fillRoundedRect(-w / 2, -h / 2, w, 164, { tl: 28, tr: 28, bl: 0, br: 0 });
     g.lineStyle(st === 'current' ? 7 : 4, st === 'current' ? 0xffd24a : lit ? 0xc9a24a : 0x4a4e58, 1).strokeRoundedRect(-w / 2, -h / 2, w, h, 28);
 
-    const medal = this.add.image(w / 2 - 70, -h / 2 + 46, shamsehTex(this, 40)).setScale(0.95);
+    const previewKey = arenaPreviewKey(era.skin);
+    const poster = this.add.image(0, -h / 2 + 85, '__MISSING').setVisible(false);
+    const showPoster = () => {
+      if (!poster.scene || !Art.isReal(previewKey)) return;
+      poster.setTexture(previewKey).setDisplaySize(450, 150).setVisible(true);
+    };
+    if (Art.isReal(previewKey)) showPoster();
+    else if (hasPackedImage(this, previewKey)) void ensureLazy(this, previewKey).then(showPoster);
+    const labelBacking = this.add.rectangle(0, -h / 2 + 127, 450, 66, 0x0c1224, 0.88);
+    const medal = this.add.image(w / 2 - 64, -h / 2 + 127, shamsehTex(this, 32)).setScale(0.9);
     if (!lit) medal.setTint(0x8a8e98);
-    const num = this.add.text(w / 2 - 70, -h / 2 + 44, faNum(i + 1), {
-      fontFamily: FONT_FAMILY, fontSize: '40px', fontStyle: '900', color: lit ? '#fffbe8' : '#d8dce4',
+    const num = this.add.text(w / 2 - 64, -h / 2 + 125, faNum(i + 1), {
+      fontFamily: FONT_FAMILY, fontSize: '32px', fontStyle: '900', color: lit ? '#fffbe8' : '#d8dce4',
       stroke: lit ? '#3a1a04' : '#20222a', strokeThickness: 8,
     }).setOrigin(0.5);
-    const name = this.add.text(w / 2 - 132, -h / 2 + 46, era.name, {
-      fontFamily: FONT_FAMILY, fontSize: '46px', fontStyle: '900', color: lit ? '#fffbe8' : '#c8ccd6', rtl: true,
+    const name = this.add.text(w / 2 - 114, -h / 2 + 127, era.name, {
+      fontFamily: FONT_FAMILY, fontSize: '42px', fontStyle: '900', color: lit ? '#fffbe8' : '#c8ccd6', rtl: true,
       stroke: lit ? '#2a1204' : '#101116', strokeThickness: 6,
     }).setOrigin(1, 0.5);
     const muted = lit ? '#e8dcc0' : '#8a8e98';
@@ -181,9 +197,9 @@ export class EraSelectScene extends Phaser.Scene {
       if (t.width > w - 68) t.setScale((w - 68) / t.width);
       return t;
     };
-    const year = line(-h / 2 + 124, era.year, 30, lit ? '#ffd88a' : '#9aa0ac');
-    const place = line(-h / 2 + 168, era.place, 28);
-    const boss = line(-h / 2 + 210, `غول: ${era.bossName}`, 26, lit ? '#ff9a7a' : '#8a8e98');
+    const year = line(-h / 2 + 194, era.year, 30, lit ? '#ffd88a' : '#b0b5c2');
+    const place = line(-h / 2 + 237, era.place, 30);
+    const boss = line(-h / 2 + 275, `غول: ${era.bossName}`, 26, lit ? '#ff9a7a' : '#9fa4b0');
 
     const badgeText = st === 'current' ? '✓ عصر انتخاب‌شده'
       : st === 'open' ? 'سفر به این عصر ←'
@@ -199,7 +215,7 @@ export class EraSelectScene extends Phaser.Scene {
     }).setOrigin(0.5);
     if (badge.width > bw - 30) badge.setScale((bw - 30) / badge.width);
 
-    const c = this.add.container(x, y, [g, medal, num, name, year, place, boss, bg, badge]);
+    const c = this.add.container(x, y, [g, poster, labelBacking, medal, num, name, year, place, boss, bg, badge]);
     c.setAlpha(0).setScale(0.92);
     this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 320, delay: 60 + Math.min(i, 8) * 45, ease: 'Back.easeOut' });
     if (st === 'current') this.tweens.add({ targets: medal, angle: 360, duration: 12000, repeat: -1 });

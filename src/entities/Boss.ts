@@ -139,7 +139,7 @@ export class Boss {
     Object.assign(this.place, this.lurk);
 
     this.body = new BendSprite(scene, this.place.x, this.place.y, BOSS.poses.idle, { rows: 12 });
-    this.body.rope.setScale(this.place.s).setDepth(DEPTH.boss);
+    this.body.view.setScale(this.place.s).setDepth(DEPTH.boss);
 
     const glow = (tint: number, depth = DEPTH.boss + 1) =>
       scene.add.image(0, 0, 'fx_glow').setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth);
@@ -294,7 +294,7 @@ export class Boss {
   /** Breaks into golden fragments. */
   shatter(): void {
     const S = B.shatter;
-    const r = this.body.rope;
+    const r = this.body.view;
     const ref = Art.ref(this.body.pose);
     const frame = r.frame;
     const a = Art.anchor(this.body.pose);
@@ -373,13 +373,17 @@ export class Boss {
     b.stretch = 1 + I.breathe * breath + act.stretch;
     b.endWidth = 1 - I.breathe * I.counterSquash * breath + act.width;
     b.endShift = I.bobPx * Math.sin((this.t / I.bobMs) * TAU + 1.3) + this.lift.x + act.shift;
-    b.sway = I.headSwayPx * Math.sin((this.t / (I.bobMs * 1.37)) * TAU) + wobble + act.sway + this.strain * 3 * Math.sin(this.t / 22);
+    // Transfer most of the lateral hit spring to the upper body while his hands brace on the wall.
+    const recoilSway = this.tilt.x * B.flinch.swayPxPerRad;
+    b.sway = I.headSwayPx * Math.sin((this.t / (I.bobMs * 1.37)) * TAU) + wobble + act.sway
+      + recoilSway + this.strain * 3 * Math.sin(this.t / 22);
     b.wave = I.clothWave;
     b.wavePhase = this.t / 600;
-    b.rope
+    b.view
       .setPosition(this.place.x, this.place.y + act.y)
       .setScale(this.place.s)
-      .setRotation(I.tiltDeg * DEG * Math.sin((this.t / (I.bobMs * 1.9)) * TAU) + this.tilt.x + act.rot + (stunned ? wobble * 0.004 : 0));
+      .setRotation(I.tiltDeg * DEG * Math.sin((this.t / (I.bobMs * 1.9)) * TAU) + this.tilt.x * 0.35 + act.rot
+        + (stunned ? wobble * 0.004 : 0));
     if (this.flashLeft > 0) b.setTint(0xffffff, true);
     else if (this.silhouette > 0) b.setTint(mixTint(0xffffff, FEEL.title.silhouetteTint, this.silhouette));
     else b.setTint(brain.fury ? B.fury.tint : 0xffffff);

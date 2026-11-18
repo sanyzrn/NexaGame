@@ -54,7 +54,7 @@ export class Hero {
 
   constructor(scene: Phaser.Scene, readonly x: number, readonly y: number, private readonly fx: FX) {
     this.body = new BendSprite(scene, x, y, HERO.poses.idle, { rows: 9 });
-    this.body.rope.setScale(HERO.scale).setDepth(worldDepth(y));
+    this.body.view.setScale(HERO.scale).setDepth(worldDepth(y));
     this.body.swayStart = FEEL.hero.swayStart;
     new Shadow(scene, HERO.shadow, HERO.scale).place(x, y);
     this.bowX = x + HERO.bow.x;
@@ -225,7 +225,7 @@ export class Hero {
     const target = aim.aiming ? Phaser.Math.Clamp(aim.dirX * F.leanTowardAim, -F.leanTowardAim, F.leanTowardAim) : 0;
     this.lean += (target - this.lean) * Math.min(1, dt / 80);
     const p = 1 + F.posePunch * Math.sin(this.punch * Math.PI);
-    b.rope
+    b.view
       .setPosition(this.x, this.y + R.nudgePx * kick + knock)
       .setScale(HERO.scale * (1 - F.tension * d + squash) * p, HERO.scale * p)
       .setRotation(this.lean);
@@ -237,7 +237,7 @@ export class Hero {
       const w = (0.5 + 0.5 * Math.sin((this.t / 1000) * S.hz * TAU)) * fade;
       const mix = (shift: number) => Math.round(255 - (255 - ((S.tint >> shift) & 0xff)) * w);
       b.setTint(Phaser.Display.Color.GetColor(mix(16), mix(8), mix(0)));
-      b.rope.setAlpha(1);
+      b.view.setAlpha(1);
       if (Math.random() < 0.35 * fade) this.fx.sparkleAt(this.x, this.y - 170, 150);
     } else if (this.hurtLeft > H.ms - H.flashMs) {
       b.setTint(0xff3020, true);
@@ -246,7 +246,7 @@ export class Hero {
       b.setTint(Phaser.Display.Color.GetColor(255, gb, gb));
     }
     if (this.shimmerLeft <= 0) {
-      b.rope.setAlpha(this.invulnerableLeft > 0 && Math.floor(this.invulnerableLeft / H.blinkMs) % 2 === 0 ? 0.45 : 1);
+      b.view.setAlpha(this.invulnerableLeft > 0 && Math.floor(this.invulnerableLeft / H.blinkMs) % 2 === 0 ? 0.45 : 1);
     }
 
     if (this.hasFeather) {
