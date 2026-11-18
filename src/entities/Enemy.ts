@@ -149,14 +149,14 @@ export class Enemy implements Target {
   // flyer
   private baseX = 0;
   private hoverH = 0;
-  private tumbleLeft = 0;
-  private tumbleDir = 1;
   // shield
   private raise = 0;
   private raisedCue = false;
   // hit feedback
   private flashLeft = 0;
   private hitPoseLeft = 0;
+  private hitPoseMs = 1;
+  private hitSide = 1;
   private squash = 0;
   private kbX = 0;
   private kbY = 0;
@@ -301,7 +301,7 @@ export class Enemy implements Target {
     this.state = State.Spawning;
     this.t = this.life = 0;
     this.popMul = 0;
-    this.pauseLeft = this.tumbleLeft = this.flashLeft = this.hitPoseLeft = this.squash = 0;
+    this.pauseLeft = this.flashLeft = this.hitPoseLeft = this.squash = 0;
     this.burstLeft = 0;
     this.burnLeft = this.burnTickT = 0;
     this.fuseLeft = 0;
@@ -361,21 +361,17 @@ export class Enemy implements Target {
     this.hp = Math.max(0, this.hp - hit.damage);
     if (hit.fire) this.ignite();
     this.flashLeft = E.hitFlashMs;
-    this.hitPoseLeft = E.hitPoseMs;
-    this.squash = 1;
+    this.hitPoseMs = E.reaction[this.type].ms * (hit.crit ? 1.2 : 1);
+    this.hitPoseLeft = this.hitPoseMs;
+    this.hitSide = Math.abs(hit.dirX) > 0.1 ? Math.sign(hit.dirX) : hit.x <= this.ax ? 1 : -1;
     this.trailWait = E.hpBar.trailDelayMs;
     this.setBar(true);
     this.kbX += hit.dirX * kb;
     this.kbY += hit.dirY * kb;
-    if (this.type === 'flyer') {
-      this.tumbleLeft = FEEL.flyer.tumble.ms;
-      this.tumbleDir = hit.dirX >= 0 ? 1 : -1;
-    }
     if (this.hp > 0) return 'hit';
     // The bomber doesn't die — its cauldron lights. A fire arrow lights it fast.
     if (this.type === 'bomber' && this.fuseLeft <= 0) {
       this.fuseLeft = hit.fire ? BALANCE.enemies.bomber.fireFuseMs : BALANCE.enemies.bomber.fuseMs;
-      this.squash = 1.4;
       return 'hit';
     }
     this.die(DEATHS[Math.floor(Math.random() * DEATHS.length)], hit.dirX);
@@ -491,7 +487,6 @@ export class Enemy implements Target {
     this.life += dt;
     if (this.flashLeft > 0) this.flashLeft -= dt;
     if (this.hitPoseLeft > 0) this.hitPoseLeft -= dt;
-    if (this.tumbleLeft > 0) this.tumbleLeft -= dt;
     this.squash = Math.max(0, this.squash - dt / E.squashMs);
     const decay = Math.exp(-dt / E.knockbackDecayMs);
     this.kbX *= decay;
@@ -648,7 +643,6 @@ export class Enemy implements Target {
             this.hooks.windup?.(this);
           }
         }
-        this.stepPhase += dt / 900;
       }
     } else if (this.type === 'bomber') {
       // Heavy, lurching, in no hurry — the danger is what it carries.
@@ -765,7 +759,7 @@ export class Enemy implements Target {
     switch (this.death) {
       case 'pop': {
         // Swell, then shrink away.
-        if (k < 0.25) this.img.setTintFill(0xffffff);
+        if (this.t < FEEL.enemy.hitFlashMs) this.img.setTintFill(0xffffff);
         else this.img.setTint(0xc9a0ff);
         const p = k < 0.2 ? 1 + (D.pop - 1) * (k / 0.2) : D.pop * (1 - (k - 0.2) / 0.8);
         this.img.setScale(base * Math.max(0.01, p) * (1 + punch)).setAlpha(1 - k * k);
@@ -773,7 +767,7 @@ export class Enemy implements Target {
       }
       case 'spin': {
         // Whirls into the smoke.
-        if (k < 0.2) this.img.setTintFill(0xffffff);
+        if (this.t < FEEL.enemy.hitFlashMs) this.img.setTintFill(0xffffff);
         else this.img.setTint(0xb07ae0);
         const e = k * k;
         this.img.setRotation(this.deathSpin * D.spinTurns * TAU * e).setScale(base * (1 - 0.9 * e) * (1 + punch)).setAlpha(1 - e);
@@ -781,7 +775,7 @@ export class Enemy implements Target {
       }
       case 'crumble': {
         // Squashes flat and sinks into the ground.
-        if (k < 0.15) this.img.setTintFill(0xffffff);
+        if (this.t < FEEL.enemy.hitFlashMs) this.img.setTintFill(0xffffff);
         else this.img.setTint(0x9a80c0);
         const e = k < 0.3 ? k / 0.3 : 1;
         this.img.setScale(base * (1 + 0.35 * e) * (1 + punch), base * Math.max(0.02, 1 - 0.95 * k)).setAlpha(1 - Math.max(0, (k - 0.5) / 0.5));
@@ -817,24 +811,23 @@ export class Enemy implements Target {
     const E = FEEL.enemy;
     const def = this.def;
     const walk = def.poses.walk;
-    let pose = walk[Math.floor(this.stepPhase) % walk.length];
+    // Two contacts per cycle. Passing poses never change stride or footstep timing.
+    let pose = walk[Math.floor(this.stepPhase * walk.length / 2) % walk.length];
+    const hit = clamp(this.hitPoseLeft / this.hitPoseMs, 0, 1);
+    const recoil = hit * (2 - hit);
     let bob = 0;
     let tilt = Math.sin(this.stepPhase * Math.PI) * E.walk.tiltDeg * DEG;
     let lift = 0;
     let scaleX = 1;
     let scaleY = 1;
+    let shadowSize = 1;
+    let shadowAlpha = 1;
     const sq = Math.sin(this.squash * Math.PI) * E.squash;
 
     if (this.type === 'flyer') {
       const F = FEEL.flyer;
-      let drop = 0;
       tilt = Math.sin((this.life / F.zigPeriodMs) * TAU + this.seed + 1.2) * F.bankDeg * DEG;
-      if (this.tumbleLeft > 0) {
-        const k = 1 - this.tumbleLeft / F.tumble.ms;
-        tilt += this.tumbleDir * F.tumble.turns * TAU * Math.sin(k * Math.PI);
-        drop = F.tumble.dropPx * Math.sin(k * Math.PI);
-        pose = def.poses.hit;
-      }
+      const drop = F.hitDropPx * Math.sin(hit * Math.PI);
       const h = this.hoverH + Math.sin((this.life / F.bobMs) * TAU + this.seed) * F.bobPx - drop;
       this.ax = this.x + this.kbX;
       this.ay = this.y - h + this.kbY;
@@ -866,7 +859,8 @@ export class Enemy implements Target {
         // Ghost fade, with a fast shimmer warning before it slips away.
         if (this.phase === 'ghost') {
           this.img.setAlpha(W.ghostAlpha);
-          this.shadow.place(this.ax, this.ay, 0.5, W.ghostAlpha);
+          shadowSize = 0.5;
+          shadowAlpha = W.ghostAlpha;
         } else if (this.phaseLeft < BALANCE.enemies.wraith.telegraphMs) {
           this.img.setAlpha(0.55 + 0.45 * Math.abs(Math.sin((this.life / 1000) * W.telegraphShimmerHz * Math.PI)));
         } else {
@@ -881,11 +875,16 @@ export class Enemy implements Target {
           pose = def.poses.throw ?? walk[0];
           tilt = Math.sin(k * S.windupTurns * TAU) * S.windupTiltDeg * DEG;
           scaleY += 0.05 * Math.sin(k * Math.PI);
+        } else if (this.y >= this.stopY) {
+          pose = def.poses.idle ?? walk[0];
+          bob = 0;
+          tilt = 0;
         }
       } else if (this.type === 'bomber') {
         const F = FEEL.bomber;
         bob = Math.abs(Math.sin(this.stepPhase * Math.PI)) * F.bobPx;
-        tilt = tilt * 0.5 + Math.sin((this.life / 1000) * F.sloshHz * TAU) * F.sloshDeg * DEG;
+        // The pot follows the weight shift of the feet instead of vibrating independently.
+        tilt = Math.sin(this.stepPhase * Math.PI) * F.sloshDeg * DEG;
       } else {
         const S = FEEL.shield;
         bob = Math.abs(Math.sin(this.stepPhase * Math.PI)) * S.bobPx;
@@ -901,11 +900,18 @@ export class Enemy implements Target {
       }
       this.ax = this.x + this.kbX;
       this.ay = this.y + this.kbY;
-      this.shadow.place(this.ax, this.ay, 1 + sq * 0.4 - bob / 80);
+      this.shadow.place(this.ax, this.ay, shadowSize * (1 + sq * 0.4 - bob / 80), shadowAlpha);
       this.img.setDepth(worldDepth(this.y));
     }
 
-    if (this.hitPoseLeft > 0) pose = def.poses.hit;
+    if (hit > 0) {
+      const reaction = E.reaction[this.type];
+      pose = def.poses.hit;
+      tilt += this.hitSide * reaction.leanDeg * DEG * recoil;
+      scaleX += reaction.squash * recoil;
+      scaleY -= reaction.squash * recoil;
+      bob *= 1 - recoil;
+    }
     if (this.stunLeft > 0) {
       // Dazed by the quake: a slow woozy sway.
       tilt = Math.sin(this.t / 90) * 0.18;
@@ -958,9 +964,10 @@ export class Enemy implements Target {
     this.img.setPosition(ox, oy).setScale(s * (scaleX + sq), s * (scaleY - sq)).setRotation(tilt);
 
     if (this.type === 'bomber' && this.fuseLeft > 0 && this.state !== State.Lunging) {
-      // Sparks off the lit fuse.
+      // The hit pose shifts the cauldron sideways as the bomber staggers.
       const g = 0.4 + 0.6 * Math.abs(Math.sin((this.life / 1000) * 9 * TAU));
-      this.glint.setVisible(true).setPosition(this.ax + 78, this.ay - 150).setTint(0x8aff4a).setAlpha(g)
+      this.placeGlint(pose === def.poses.hit ? 84 : 40, -163);
+      this.glint.setVisible(true).setTint(0x8aff4a).setAlpha(g)
         .setScale(0.5 + 0.3 * g).setRotation(this.life / 140).setDepth(this.img.depth + 0.1);
     } else if (this.type === 'shield' && this.raise > 0.05 && this.state !== State.Lunging) {
       const g = this.raise * (0.55 + 0.45 * Math.sin(this.life / 70));
@@ -970,7 +977,9 @@ export class Enemy implements Target {
       // The stone whirls overhead in its sling.
       const k = 1 - this.throwT / BALANCE.enemies.slinger.windupMs;
       const a = k * FEEL.slinger.windupTurns * TAU;
-      this.glint.setVisible(true).setPosition(this.ax + 30 + Math.cos(a) * 34, this.ay - 150 + Math.sin(a) * 22).setTint(0xd8d8e0)
+      if (pose === def.poses.throw) this.placeGlint(-80 + Math.cos(a) * 15, -193 + Math.sin(a) * 10);
+      else this.glint.setPosition(this.ax + 30 + Math.cos(a) * 34, this.ay - 150 + Math.sin(a) * 22);
+      this.glint.setVisible(true).setTint(0xd8d8e0)
         .setAlpha(0.9).setScale(0.45).setRotation(a).setDepth(this.img.depth + 0.1);
     } else if (this.elite && this.state !== State.Lunging) {
       // Gold trim: a slow-turning star above the head.
@@ -979,6 +988,15 @@ export class Enemy implements Target {
     } else if (this.glint.visible) {
       this.glint.setVisible(false);
     }
+  }
+
+  /** Positions the effect at a point in the current sprite, relative to its origin. */
+  private placeGlint(x: number, y: number): void {
+    const dx = x * this.img.scaleX * (this.img.flipX ? -1 : 1);
+    const dy = y * this.img.scaleY;
+    const cos = Math.cos(this.img.rotation);
+    const sin = Math.sin(this.img.rotation);
+    this.glint.setPosition(this.img.x + dx * cos - dy * sin, this.img.y + dx * sin + dy * cos);
   }
 
   private updateBar(dt: number): void {

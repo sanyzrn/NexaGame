@@ -116,7 +116,7 @@ export const FEEL = {
     roarMs: 900,
     /** Hit reactions ride a spring: they overshoot and settle. */
     spring: { hz: 2.4, damping: 0.32 },
-    flinch: { liftPx: 7, tiltDeg: 3, flashMs: 80 },
+    flinch: { liftPx: 11, tiltDeg: 3, flashMs: 36, swayPxPerRad: 280 },
     recoil: { liftPx: 30, tiltDeg: 5, squash: 0.07, hitStopMs: 110, shake: { ms: 280, intensity: 0.01 }, gemFlare: 3.4 },
     intro: {
       darken: 0.3,
@@ -390,7 +390,7 @@ export const FEEL = {
     driftPx: 18,
     driftMs: 9000,
     /** Dusk grade: indigo sky → ember horizon, multiplied over the world. */
-    dusk: { top: '#5a4a9a', mid: '#e8906a', bottom: '#3a2a4a', alpha: 0.85, darken: 0.18 },
+    dusk: { top: '#201b3c', mid: '#59342c', bottom: '#261930', alpha: 0.42, darken: 0.18 },
     embers: { perSec: 9, lifeMs: [3800, 6500] as const },
     /** The Div behind the wall: a dark silhouette with glowing eyes. */
     silhouetteTint: 0x24163a,
@@ -617,8 +617,16 @@ export const FEEL = {
   enemy: {
     spawn: { popMs: 380, overshoot: 1.1, delayMs: 180 },
     walk: { tiltDeg: 4, speedJitter: 0.1 },
-    hitFlashMs: 80,
-    hitPoseMs: 150,
+    hitFlashMs: 34,
+    /** Keep the recoil readable after the flash. Duration and lean reflect each enemy's weight. */
+    reaction: {
+      imp: { ms: 205, leanDeg: 10, squash: 0.10 },
+      shield: { ms: 240, leanDeg: 5, squash: 0.04 },
+      flyer: { ms: 295, leanDeg: 42, squash: 0.08 },
+      slinger: { ms: 205, leanDeg: 9, squash: 0.08 },
+      bomber: { ms: 250, leanDeg: 6, squash: 0.05 },
+      wraith: { ms: 220, leanDeg: 12, squash: 0.05 },
+    },
     knockbackPx: 22,
     knockbackDecayMs: 90,
     squash: 0.2,
@@ -648,7 +656,8 @@ export const FEEL = {
     pause: { chancePerSec: 0.07, ms: 1000, bangs: 2 },
   },
   flyer: {
-    flapMs: 105,
+    /** One half of the wingbeat. The halfway frame is shown in both directions. */
+    flapMs: 118,
     /** Banks into its zig-zag turns. */
     bankDeg: 8,
     hoverPx: 150,
@@ -656,7 +665,7 @@ export const FEEL = {
     bobMs: 760,
     zigPx: 105,
     zigPeriodMs: 2800,
-    tumble: { ms: 440, turns: 0.55, dropPx: 45 },
+    hitDropPx: 34,
     shadowMinScale: 0.55,
   },
   slinger: {
@@ -670,8 +679,7 @@ export const FEEL = {
     stridePx: 40,
     bobPx: 3,
     /** The cauldron sloshes as it walks. */
-    sloshDeg: 4,
-    sloshHz: 6,
+    sloshDeg: 3.5,
     /** Fuse: blinks faster and faster toward the blast. */
     fuseBlinkHz: 9,
     fuseTint: 0xffe08a,

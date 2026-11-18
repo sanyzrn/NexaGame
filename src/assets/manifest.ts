@@ -44,12 +44,22 @@ const char = (key: string, size: number, atlas: AtlasGroup, kind: PlaceholderKin
 const ui = (key: string, w: number, h: number, kind: PlaceholderKind, pose?: string): AssetDef =>
   ({ key, w, h, ox: 0.5, oy: 0.5, atlas: 'propsui', alpha: true, ph: { kind, pose } });
 
+export const ARENA_BG_KEY = 'bg_arena_01';
+
+export function arenaArtKey(skin: string | null): string {
+  return skin ? `${skin}_${ARENA_BG_KEY}` : ARENA_BG_KEY;
+}
+
+export function arenaPreviewKey(skin: string | null): string {
+  return `${arenaArtKey(skin)}_preview`;
+}
+
 /** Mood background keys (keep in sync with data/moods.ts — a unit test checks). */
 export const MOOD_BGS: readonly string[] = ['bg_arena_dawn', 'bg_arena_sunset', 'bg_arena_night', 'bg_arena_winter', 'bg_arena_autumn', 'bg_arena_overcast'];
 
 const BASE: readonly AssetDef[] = [
   // Background
-  { key: 'bg_arena_01', w: 1080, h: 1920, ox: 0, oy: 0, atlas: null, alpha: false, ph: { kind: 'bg' } },
+  { key: ARENA_BG_KEY, w: 1080, h: 1920, ox: 0, oy: 0, atlas: null, alpha: false, ph: { kind: 'bg' } },
 
   // Hero (512)
   char('hero_idle', 512, 'hero', 'hero', 'idle'),
@@ -60,32 +70,43 @@ const BASE: readonly AssetDef[] = [
   // Imp (256)
   char('imp_walk_1', 256, 'enemies', 'imp', 'walk1'),
   char('imp_walk_2', 256, 'enemies', 'imp', 'walk2'),
+  char('imp_pass_1', 256, 'enemies', 'imp', 'walk1'),
+  char('imp_pass_2', 256, 'enemies', 'imp', 'walk2'),
   char('imp_hit', 256, 'enemies', 'imp', 'hit'),
 
   // Shield-bearer (384)
   char('shield_walk_1', 384, 'enemies', 'shield', 'walk1'),
   char('shield_walk_2', 384, 'enemies', 'shield', 'walk2'),
+  char('shield_pass_1', 384, 'enemies', 'shield', 'walk1'),
+  char('shield_pass_2', 384, 'enemies', 'shield', 'walk2'),
   char('shield_hit', 384, 'enemies', 'shield', 'hit'),
 
   // Flyer (320) — anchored at the body centre, it has no feet on the ground
   char('flyer_up', 320, 'enemies', 'flyer', 'up', 0.5, 0.5),
   char('flyer_down', 320, 'enemies', 'flyer', 'down', 0.5, 0.5),
+  char('flyer_mid', 320, 'enemies', 'flyer', 'up', 0.5, 0.5),
   char('flyer_hit', 320, 'enemies', 'flyer', 'hit', 0.5, 0.5),
 
   // Slinger (سنگ‌انداز, 256)
   char('slinger_walk_1', 256, 'enemies', 'slinger', 'walk1'),
   char('slinger_walk_2', 256, 'enemies', 'slinger', 'walk2'),
+  char('slinger_pass_1', 256, 'enemies', 'slinger', 'walk1'),
+  char('slinger_pass_2', 256, 'enemies', 'slinger', 'walk2'),
+  char('slinger_idle', 256, 'enemies', 'slinger', 'walk1'),
   char('slinger_throw', 256, 'enemies', 'slinger', 'throw'),
   char('slinger_hit', 256, 'enemies', 'slinger', 'hit'),
 
   // Bomber (نفتی‌دار, 320)
   char('bomber_walk_1', 320, 'enemies', 'bomber', 'walk1'),
   char('bomber_walk_2', 320, 'enemies', 'bomber', 'walk2'),
+  char('bomber_pass_1', 320, 'enemies', 'bomber', 'walk1'),
+  char('bomber_pass_2', 320, 'enemies', 'bomber', 'walk2'),
   char('bomber_hit', 320, 'enemies', 'bomber', 'hit'),
 
   // Wraith (شبح, 320)
   char('wraith_walk_1', 320, 'enemies', 'wraith', 'walk1'),
   char('wraith_walk_2', 320, 'enemies', 'wraith', 'walk2'),
+  char('wraith_mid', 320, 'enemies', 'wraith', 'walk1'),
   char('wraith_hit', 320, 'enemies', 'wraith', 'hit'),
 
   // Hazard projectiles
@@ -124,14 +145,14 @@ const BASE: readonly AssetDef[] = [
  * (same size and anchor as the base); gameplay code keeps using the base key.
  */
 export const SKINNABLE_KEYS: readonly string[] = [
-  'bg_arena_01', ...MOOD_BGS,
+  ARENA_BG_KEY, ...MOOD_BGS,
   'hero_idle', 'hero_draw', 'hero_full', 'hero_hurt',
-  'imp_walk_1', 'imp_walk_2', 'imp_hit',
-  'shield_walk_1', 'shield_walk_2', 'shield_hit',
-  'flyer_up', 'flyer_down', 'flyer_hit',
-  'slinger_walk_1', 'slinger_walk_2', 'slinger_throw', 'slinger_hit',
-  'bomber_walk_1', 'bomber_walk_2', 'bomber_hit',
-  'wraith_walk_1', 'wraith_walk_2', 'wraith_hit',
+  'imp_walk_1', 'imp_walk_2', 'imp_pass_1', 'imp_pass_2', 'imp_hit',
+  'shield_walk_1', 'shield_walk_2', 'shield_pass_1', 'shield_pass_2', 'shield_hit',
+  'flyer_up', 'flyer_down', 'flyer_mid', 'flyer_hit',
+  'slinger_walk_1', 'slinger_walk_2', 'slinger_pass_1', 'slinger_pass_2', 'slinger_idle', 'slinger_throw', 'slinger_hit',
+  'bomber_walk_1', 'bomber_walk_2', 'bomber_pass_1', 'bomber_pass_2', 'bomber_hit',
+  'wraith_walk_1', 'wraith_walk_2', 'wraith_mid', 'wraith_hit',
   'rock', 'boulder',
   'boss_idle', 'boss_roar', 'boss_stunned',
   'pillar_01', 'banner', 'brazier', 'pot', 'arrow',
@@ -150,7 +171,12 @@ export const MANIFEST: readonly AssetDef[] = [
   ...BASE,
   ...ERA_SKINS.flatMap(({ prefix, atlas }) => SKINNABLE_KEYS.map((key): AssetDef => {
     const b = BASE_BY_KEY.get(key)!;
-    return { ...b, key: `${prefix}_${key}`, atlas: b.atlas === null ? null : atlas, skinOf: key };
+    return { ...b, key: `${prefix}_${key}`, atlas: b.atlas === null ? null : atlas, skinOf: key, lazy: key === ARENA_BG_KEY || b.lazy };
+  })),
+  // Crops made by the packer for the era picker. Never fetch full arena textures to show cards.
+  ...[null, ...ERA_SKINS.map(({ prefix }) => prefix)].map((skin): AssetDef => ({
+    key: arenaPreviewKey(skin), w: 360, h: 120, ox: 0.5, oy: 0.5, atlas: null,
+    alpha: false, lazy: true, optional: true, ph: { kind: 'bg' },
   })),
 ];
 

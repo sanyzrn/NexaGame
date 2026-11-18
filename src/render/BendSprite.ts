@@ -12,10 +12,12 @@ interface Geo {
   flip: number;
 }
 
+type PoseView = Phaser.GameObjects.Rope | Phaser.GameObjects.Image;
+
 /**
  * A pose drawn as a vertical strip of rows (a Phaser Rope) that can be sheared, stretched and
  * squeezed row by row — body/cape sway, breathing, leaning, head bob and cloth billow without
- * rigging or extra art. Works the same for atlas frames (trimmed) and placeholders.
+ * rigging or extra art. Phaser has no Canvas renderer for ropes, so Canvas uses an anchored image.
  *
  * Local space: design px before the rope's own scale, relative to the pose anchor. `t` runs from
  * 0 at the pinned end (feet, or the top of a hanging banner) to 1 at the free end.
@@ -24,7 +26,7 @@ interface Geo {
  * and fades out, so a pose never snaps.
  */
 export class BendSprite {
-  readonly rope: Phaser.GameObjects.Rope;
+  readonly view: PoseView;
 
   /** Horizontal offset of the free end; blends in from `swayStart` along the strip. */
   sway = 0;
@@ -44,7 +46,7 @@ export class BendSprite {
   private tintColor = 0xffffff;
   private mirror = false;
   private readonly geo: Geo = { left: 0, top: 0, w: 1, h: 1, flip: 1 };
-  private ghost: Phaser.GameObjects.Rope | null = null;
+  private ghost: PoseView | null = null;
   private readonly ghostGeo: Geo = { left: 0, top: 0, w: 1, h: 1, flip: 1 };
   private ghostLeft = 0;
   private ghostMs = 1;
@@ -54,10 +56,15 @@ export class BendSprite {
   constructor(scene: Phaser.Scene, x: number, y: number, key: string, opts: { rows?: number; pin?: 'feet' | 'top' } = {}) {
     this.rows = opts.rows ?? 8;
     this.pinTop = opts.pin === 'top';
-    const ref = Art.ref(key);
-    // A number of points is valid at runtime (Rope splits the frame), the typings only list arrays.
-    this.rope = scene.add.rope(x, y, ref.texture, ref.frame, this.rows as unknown as Phaser.Types.Math.Vector2Like[], false);
+    this.view = this.createView(scene, x, y, key);
     this.setPose(key, true);
+  }
+
+  private createView(scene: Phaser.Scene, x: number, y: number, key: string): PoseView {
+    const ref = Art.ref(key);
+    if (scene.game.renderer.type !== Phaser.WEBGL) return scene.add.image(x, y, ref.texture, ref.frame);
+    // A number of points is valid at runtime (Rope splits the frame), the typings only list arrays.
+    return scene.add.rope(x, y, ref.texture, ref.frame, this.rows as unknown as Phaser.Types.Math.Vector2Like[], false);
   }
 
   get pose(): string {
@@ -69,11 +76,11 @@ export class BendSprite {
     if (key === this.key && !force) return false;
     if (fadeMs > 0 && this.key) this.startGhost(fadeMs);
     this.key = key;
-    this.apply(this.rope, key, this.geo);
+    this.apply(this.view, key, this.geo);
     return true;
   }
 
-  private apply(r: Phaser.GameObjects.Rope, key: string, g: Geo): void {
+  private apply(r: PoseView, key: string, g: Geo): void {
     const ref = Art.ref(key);
     r.setTexture(ref.texture, ref.frame);
     const a = Art.anchor(key);
@@ -84,15 +91,18 @@ export class BendSprite {
     g.h = f.height;
     const flipped = a.flip !== this.mirror;
     g.flip = flipped ? -1 : 1;
-    if (r.flipX !== flipped) r.setFlipX(flipped);
-    else r.updateUVs();
+    if (r instanceof Phaser.GameObjects.Rope) {
+      if (r.flipX !== flipped) r.setFlipX(flipped);
+      else r.updateUVs();
+    } else {
+      r.setOrigin(a.ox, a.oy).setFlipX(flipped);
+    }
   }
 
   private startGhost(ms: number): void {
-    const r = this.rope;
+    const r = this.view;
     if (!this.ghost) {
-      const ref = Art.ref(this.key);
-      this.ghost = r.scene.add.rope(r.x, r.y, ref.texture, ref.frame, this.rows as unknown as Phaser.Types.Math.Vector2Like[], false);
+      this.ghost = this.createView(r.scene, r.x, r.y, this.key);
     }
     this.apply(this.ghost, this.key, this.ghostGeo);
     this.ghost.setVisible(true);
@@ -108,15 +118,19 @@ export class BendSprite {
 
   /** Multiplies (or with `fill`, replaces) the colour of the whole strip. Allocation-free. */
   setTint(color: number, fill = false): this {
-    const r = this.rope;
-    r.tintFill = fill;
-    if (color !== this.tintColor) {
-      this.tintColor = color;
-      r.colors.fill(color);
-      this.ghost?.colors.fill(color);
-    }
-    if (this.ghost) this.ghost.tintFill = fill;
+    const changed = color !== this.tintColor;
+    this.tintView(this.view, color, fill, changed);
+    if (this.ghost) this.tintView(this.ghost, color, fill, changed);
+    this.tintColor = color;
     return this;
+  }
+
+  private tintView(view: PoseView, color: number, fill: boolean, changed: boolean): void {
+    if (view instanceof Phaser.GameObjects.Rope) {
+      view.tintFill = fill;
+      if (changed) view.colors.fill(color);
+    } else if (fill) view.setTintFill(color);
+    else view.setTint(color);
   }
 
   /**
@@ -124,7 +138,8 @@ export class BendSprite {
    * Call once per frame after changing the parameters; `dtMs` advances the cross-fade.
    */
   update(dtMs = 0): void {
-    this.write(this.rope, this.geo);
+    const r = this.view;
+    if (r instanceof Phaser.GameObjects.Rope) this.write(r, this.geo);
     const g = this.ghost;
     if (!g || !g.visible) return;
     this.ghostLeft -= dtMs;
@@ -132,10 +147,9 @@ export class BendSprite {
       g.setVisible(false);
       return;
     }
-    const r = this.rope;
     g.setPosition(r.x, r.y).setScale(r.scaleX, r.scaleY).setRotation(r.rotation).setDepth(r.depth + 0.01)
       .setAlpha(r.alpha * (this.ghostLeft / this.ghostMs));
-    this.write(g, this.ghostGeo);
+    if (g instanceof Phaser.GameObjects.Rope) this.write(g, this.ghostGeo);
   }
 
   private write(r: Phaser.GameObjects.Rope, g: Geo): void {
@@ -161,7 +175,7 @@ export class BendSprite {
   }
 
   setVisible(v: boolean): this {
-    this.rope.setVisible(v);
+    this.view.setVisible(v);
     if (!v) this.ghost?.setVisible(false);
     return this;
   }
@@ -172,12 +186,16 @@ export class BendSprite {
    */
   worldPoint(bx: number, by: number, out: Point): Point {
     const g = this.geo;
-    const f = Phaser.Math.Clamp((by - g.top) / g.h, 0, 1);
-    const t = this.pinTop ? f : 1 - f;
-    const cx0 = (g.left + g.w / 2) * g.flip;
-    const x = cx0 + (bx * g.flip - cx0) * (1 + (this.endWidth - 1) * t * t) + this.shiftX(t, g.w);
-    const y = by * this.stretch + this.endShift * t * t;
-    const r = this.rope;
+    const r = this.view;
+    let x = bx * g.flip;
+    let y = by;
+    if (r instanceof Phaser.GameObjects.Rope) {
+      const f = Phaser.Math.Clamp((by - g.top) / g.h, 0, 1);
+      const t = this.pinTop ? f : 1 - f;
+      const cx0 = (g.left + g.w / 2) * g.flip;
+      x += (x - cx0) * (this.endWidth - 1) * t * t + this.shiftX(t, g.w);
+      y = y * this.stretch + this.endShift * t * t;
+    }
     const sx = x * r.scaleX;
     const sy = y * r.scaleY;
     const c = Math.cos(r.rotation);

@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { ERAS, type EraDef } from '../data/eras';
 import { Art } from './Art';
-import { ensureAtlas } from './lazy';
-import { ERA_SKINS, MANIFEST, MANIFEST_BY_KEY, type AssetDef } from './manifest';
+import { ensureAtlas, ensureLazy, hasPackedImage } from './lazy';
+import { ARENA_BG_KEY, arenaArtKey, ERA_SKINS, MANIFEST, MANIFEST_BY_KEY, type AssetDef } from './manifest';
 
 /** Test skins by the base key they copy, so a late real base (the lazy boss) can repaint them. */
 const cloneByBase = new Map<string, { def: AssetDef; textures: Phaser.Textures.TextureManager }>();
@@ -16,8 +16,12 @@ let listening = false;
 export function loadEraArt(scene: Phaser.Scene, era: EraDef, timeoutMs = 4000): Promise<boolean> {
   const group = ERA_SKINS.find((s) => s.prefix === era.skin)?.atlas;
   if (!group) return Promise.resolve(true);
+  const key = arenaArtKey(era.skin);
+  const packed = hasPackedImage(scene, key);
+  const atlas = ensureAtlas(scene, group);
+  const backdrop = packed ? ensureLazy(scene, key).then(() => Art.isReal(key)) : Promise.resolve(true);
   return Promise.race([
-    ensureAtlas(scene, group),
+    Promise.all([atlas, backdrop]).then((results) => results.every(Boolean)),
     new Promise<boolean>((r) => scene.time.delayedCall(timeoutMs, () => r(false))),
   ]);
 }
@@ -46,7 +50,10 @@ export function applyEraArt(scene: Phaser.Scene, era: EraDef): void {
   }
   if (era.skin !== null) {
     for (const def of MANIFEST) {
-      if (def.skinOf && !def.optional && def.key.startsWith(`${era.skin}_`) && !Art.has(def.key)) createSkinClone(scene.textures, def);
+      if (!def.skinOf || def.optional || !def.key.startsWith(`${era.skin}_`) || Art.has(def.key)) continue;
+      // A pending real texture must be free to register under its own key after a timeout.
+      if (def.skinOf === ARENA_BG_KEY && hasPackedImage(scene, def.key)) continue;
+      createSkinClone(scene.textures, def);
     }
   }
   Art.setSkin(era.skin);

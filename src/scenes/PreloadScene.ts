@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { Art } from '../assets/Art';
 import { createFxTextures } from '../assets/fxTextures';
-import { ERA_SKINS, LAZY_ATLAS_GROUPS, MANIFEST, MANIFEST_BY_KEY, type PackFile } from '../assets/manifest';
+import { arenaArtKey, ERA_SKINS, LAZY_ATLAS_GROUPS, MANIFEST, MANIFEST_BY_KEY, type PackFile } from '../assets/manifest';
 import { createPlaceholder } from '../assets/placeholders';
 import { COLORS, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { services } from '../services';
@@ -46,8 +46,9 @@ export class PreloadScene extends Phaser.Scene {
       this.load.atlas(`atlas:${a.name}`, base + texture + v, base + a.json + v);
     }
     const lazy = new Set(MANIFEST.filter((d) => d.lazy).map((d) => d.key));
+    const activeArena = arenaArtKey(currentEra().skin);
     for (const img of pack.images) {
-      if (lazy.has(img.key)) continue;
+      if (lazy.has(img.key) && img.key !== activeArena) continue;
       this.load.image(img.key, base + (services.caps.webp ? img.webp : img.fallback) + v);
     }
 
@@ -61,6 +62,7 @@ export class PreloadScene extends Phaser.Scene {
     const pack = this.registry.get('pack') as PackFile;
     const eraGroup = currentEraGroup();
     const lazyKeys = new Set(MANIFEST.filter((d) => d.lazy).map((d) => d.key));
+    const activeArena = arenaArtKey(currentEra().skin);
 
     for (const a of pack.atlases) {
       const key = `atlas:${a.name}`;
@@ -68,7 +70,7 @@ export class PreloadScene extends Phaser.Scene {
       for (const frame of a.frames) Art.register(frame, { texture: key, frame }, true);
     }
     for (const img of pack.images) {
-      if (lazyKeys.has(img.key)) continue;
+      if (lazyKeys.has(img.key) && img.key !== activeArena) continue;
       if (!this.failed.has(img.key) && this.textures.exists(img.key)) Art.register(img.key, { texture: img.key }, true);
     }
 

@@ -276,7 +276,7 @@ function createBossFightTextures(scene: Phaser.Scene): void {
 
 /**
  * Golden-hour grade, drawn full-screen from tiny textures (they are smooth, so upscaling is free):
- * - fx_grade_mul (MULTIPLY): sun-side top → far-side bottom falloff, times the vignette;
+ * - fx_grade_shade: translucent sun-side falloff and vignette;
  * - fx_grade_add (ADD): warm bloom from the sun corner.
  */
 function createGradeTextures(scene: Phaser.Scene): void {
@@ -285,13 +285,14 @@ function createGradeTextures(scene: Phaser.Scene): void {
   const H = 240;
   const sunLeft = L.sunSide === 'left';
 
-  canvas(scene, 'fx_grade_mul', W, H, (ctx) => {
+  canvas(scene, 'fx_grade_shade', W, H, (ctx) => {
     const st = rgb(L.grade.sunTop);
     const ft = rgb(L.grade.farTop);
     const sb = rgb(L.grade.sunBottom);
     const fb = rgb(L.grade.farBottom);
     const vc = rgb(L.vignette.color);
     const img = ctx.createImageData(W, H);
+    const grade = [0, 0, 0];
     for (let y = 0; y < H; y++) {
       const v = y / (H - 1);
       for (let x = 0; x < W; x++) {
@@ -307,9 +308,14 @@ function createGradeTextures(scene: Phaser.Scene): void {
           const bottom = sb[c] + (fb[c] - sb[c]) * u;
           const base = top + (bottom - top) * v;
           const vigC = 255 + (vc[c] - 255) * vig;
-          img.data[i + c] = Math.round((base * vigC) / 255);
+          grade[c] = (base * vigC) / 255;
         }
-        img.data[i + 3] = 255;
+        // Bake the tint into a translucent shadow. An opaque multiply plane can draw as
+        // Normal on some renderers and hide everything on the battlefield under it.
+        const floor = Math.min(...grade);
+        const alpha = 255 - floor;
+        img.data[i + 3] = alpha;
+        for (let c = 0; c < 3; c++) img.data[i + c] = alpha > 0 ? 160 * (grade[c] - floor) / alpha : 0;
       }
     }
     ctx.putImageData(img, 0, 0);

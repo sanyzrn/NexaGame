@@ -13,12 +13,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { packAsync } from 'free-tex-packer-core';
-import { MANIFEST, MANIFEST_BY_KEY, LAZY_ATLAS_GROUPS, type AssetDef, type AtlasGroup, type PackFile } from '../src/assets/manifest.ts';
+import { ARENA_BG_KEY, MANIFEST, MANIFEST_BY_KEY, LAZY_ATLAS_GROUPS, type AssetDef, type AtlasGroup, type PackFile } from '../src/assets/manifest.ts';
 
 /** Bump when packing options change, to invalidate the cache. */
-const PACKER_VERSION = 3;
+const PACKER_VERSION = 4;
 const ATLAS_MAX = 2048;
 const ATLAS_WEBP = { quality: 88, alphaQuality: 90, effort: 5 } as const;
 /** Per-group WebP quality overrides (the default above suits everything else). */
@@ -69,11 +69,15 @@ export async function packAssets(opts: PackOptions = {}): Promise<PackFile> {
   // Standalone images
   for (const { def, path } of sources.filter((s) => s.def.atlas === null)) {
     const base = sharp(path).resize(def.w, def.h, { fit: 'cover' });
-    const webp = `${def.key}.webp`;
-    const fallback = `${def.key}.jpg`;
-    await base.clone().webp(BG_WEBP).toFile(join(outDir, webp));
-    await base.clone().flatten({ background: '#000000' }).jpeg(BG_JPG).toFile(join(outDir, fallback));
-    pack.images.push({ key: def.key, webp, fallback });
+    pack.images.push(await writeImage(outDir, def.key, base));
+    if (def.key === ARENA_BG_KEY || def.skinOf === ARENA_BG_KEY) {
+      const key = `${def.key}_preview`;
+      const preview = MANIFEST_BY_KEY.get(key)!;
+      // Match the gameplay crop first, then keep only the architecture at the head of the field.
+      const top = await base.clone().extract({ left: 0, top: 0, width: def.w, height: Math.round(def.w * preview.h / preview.w) })
+        .png().toBuffer();
+      pack.images.push(await writeImage(outDir, key, sharp(top).resize(preview.w, preview.h)));
+    }
   }
 
   // Atlases
@@ -91,6 +95,16 @@ export async function packAssets(opts: PackOptions = {}): Promise<PackFile> {
   writeFileSync(packPath, JSON.stringify(pack, null, 2));
   report(pack, sources, outDir, log);
   return pack;
+}
+
+async function writeImage(outDir: string, key: string, image: Sharp): Promise<PackFile['images'][number]> {
+  const webp = `${key}.webp`;
+  const fallback = `${key}.jpg`;
+  await Promise.all([
+    image.clone().webp(BG_WEBP).toFile(join(outDir, webp)),
+    image.clone().flatten({ background: '#000000' }).jpeg(BG_JPG).toFile(join(outDir, fallback)),
+  ]);
+  return { key, webp, fallback };
 }
 
 function collectSources(srcDir: string, log: (m: string) => void): Source[] {
@@ -214,8 +228,8 @@ function report(pack: PackFile, sources: Source[], outDir: string, log: (m: stri
     if (isLazyImage) lazy += size(i.webp);
     else initial += size(i.webp);
   }
-  const have = new Set(sources.map((s) => s.def.key));
-  const missing = MANIFEST.filter((d) => !have.has(d.key));
+  const have = new Set([...sources.map((s) => s.def.key), ...pack.images.map((img) => img.key)]);
+  const missing = MANIFEST.filter((d) => !d.optional && !have.has(d.key));
   const placeholders = missing.filter((d) => !d.skinOf).length;
   const testSkins = missing.length - placeholders;
   log(`[assets] packed ${have.size}/${MANIFEST.length} assets`
