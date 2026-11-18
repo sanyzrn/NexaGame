@@ -60,7 +60,9 @@ export class MockGameService implements GameService {
 
   async prepareInvite(groupName: string): Promise<ShareTicket> {
     const from = this.telegram.userFirstName ?? 'یک هم‌رزم';
-    const text = `هم‌رزم! «${groupName}» در «درفش» با دیو سپید می‌جنگد. بیا با هم شکستش بدهیم 🏹`;
+    // The inviter's name is in the message itself as well as in the start parameter, so the
+    // receiver knows who called them in before even opening the game.
+    const text = `${from} تو را به لشکر «${groupName}» در «درفش» فراخواند. بیا با هم دیو سپید را شکست بدهیم 🏹`;
     return { kind: 'link', url: appLink(encodeStartParam({ kind: 'invite', from })), text };
   }
 }

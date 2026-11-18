@@ -54,6 +54,11 @@ jobs:
       - name: Build Vite application
         if: hashFiles('package.json') != ''
         shell: bash
+        env:
+          # Public Telegram build settings for t.me Mini App deep links. Set them as repository
+          # Variables (or Secrets); empty keeps the plain web-link mode (?startapp=… on the page).
+          VITE_TG_BOT: ${{ vars.VITE_TG_BOT || secrets.VITE_TG_BOT }}
+          VITE_TG_APP: ${{ vars.VITE_TG_APP || secrets.VITE_TG_APP }}
         run: |
           set -euo pipefail
           if [[ ! -f package-lock.json ]]; then
@@ -62,6 +67,17 @@ jobs:
           fi
           npm ci --no-audit --no-fund
           npm run build
+          # Verify what the build actually baked in: the invite link must be a t.me deep link
+          # when the bot is configured, and must stay a page URL when it is not.
+          bot="${VITE_TG_BOT#@}"
+          if [[ -n "$bot" ]] && grep -RqF -- "$bot" dist/bundle; then
+            echo "✅ Telegram links enabled: t.me/$bot deep links are in the bundle." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ -n "$bot" ]]; then
+            echo '::error::VITE_TG_BOT is set but the built bundle does not contain it.'
+            exit 1
+          else
+            echo 'ℹ️ No VITE_TG_BOT: invite/share links stay page URLs with ?startapp=… .' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Preserve initial dependency lockfile
         if: hashFiles('package.json') != ''

@@ -100,13 +100,41 @@ Numbers are in `BALANCE.power`; visuals, including the palettes that would becom
 
 ## Challenge and invite links
 
-The Hero Card share carries a challenge («رکوردم را بزن»: score + name); «دعوت هم‌رزم» carries an invite. Both travel in Telegram's start parameter. A friend who opens one sees who sent them on the title, and the Result tells them whether they beat the score. For real Telegram deep links, build with the bot's username (and the Mini App's short name, if it has one):
+The Hero Card share carries a challenge («رکوردم را بزن»: score + name); «دعوت هم‌رزم» carries an invite. Both travel in Telegram's `startapp` parameter: a friend who opens one sees the inviter's name on the title ribbon (and in the invite message itself), and the Result tells them whether they beat the challenge.
+
+### Build with bot settings (links open the Mini App directly)
 
 ```bash
 VITE_TG_BOT=YourBot VITE_TG_APP=darafsh npm run build
 ```
 
-Without them, links point at the page itself with `?startapp=…`, which the game reads the same way (handy for testing in a browser).
+- `VITE_TG_BOT` — the bot's username. `YourBot`, `@YourBot` or `https://t.me/YourBot` all work.
+- `VITE_TG_APP` — the Mini App's short name from BotFather (*Bot Settings → Configure Mini App*). With it, links are `https://t.me/<bot>/<app>?startapp=…`; without it, `https://t.me/<bot>?startapp=…`, which opens the bot's Main Mini App.
+- Both values are cleaned and validated at build time; a pasted full link such as `https://t.me/YourBot/darafsh` fills in both. An invalid value is ignored instead of being baked into a dead `t.me` link.
+
+The bot must have its Mini App configured in BotFather, pointed at the deployed HTTPS URL; otherwise `t.me/<bot>/<app>` has nothing to open. The game's start parameter is read from `initDataUnsafe.start_param`, which Telegram fills from `?startapp=`.
+
+**Where to set them:** locally in `.env` (copy `.env.example`); in CI as repository *Variables* `VITE_TG_BOT` / `VITE_TG_APP` (`.github/workflows/deploy.yml` passes them to `npm run build` and reports which mode the build used, failing if the bot name never reaches the bundle); on Vercel / Cloudflare Pages as project environment variables. They are baked in at build time, so changing one needs a rebuild — run the deploy workflow manually (*Run workflow*) if a push does not trigger one.
+
+### Build without bot settings (the default)
+
+With no bot variables, `npm run build` keeps the plain web links: `https://<page>/?startapp=…`, which the game reads the same way. That is the mode for local development, browser previews and any deployment without a bot.
+
+### Test the invite with two Telegram accounts
+
+1. Build with both variables set and deploy (or run `npm run dev` + `npm run tunnel` and point BotFather at the tunnel URL). Confirm the bot's Mini App opens from `https://t.me/<bot>/<app>` before testing the invite.
+2. **Account A (inviter):** open the game in Telegram, finish a run, tap «دعوت هم‌رزم».
+   - The share sheet text starts with A's first name: «<نام A> تو را به لشکر «…» در «درفش» فراخواند…».
+   - Send it to **Account B** (B can also be opened on Telegram Desktop while A stays on the phone). The link inside is `https://t.me/<bot>/<app>?startapp=i_…`.
+3. **Account B (invitee):** tap the link in the message.
+   - It must open **inside Telegram** as the Mini App, not in a browser tab.
+   - The title shows the ribbon «<نام A> تو را به لشکر فراخواند!».
+   - If a browser page opens instead, the bot's Mini App URL/short name in BotFather is wrong.
+   - If the ribbon is missing, the build had no bot settings (web-link mode) or something stripped the `startapp` query (a link shortener).
+4. **Account B** finishes a run and taps «دعوت هم‌رزم»: the new message carries **B's** name, proving the name comes from the sender's profile, not from the link that brought them in.
+5. **Account A** shares the Hero Card: B should see «<نام A> تو را به چالش کشید: رکوردش …» on the title and the score comparison on the Result.
+
+For a browser-only run (no second Telegram account), `npm run dev` then open `http://localhost:5173/?startapp=i_…` in a normal browser — the same start parameter drives the same ribbon.
 
 ## Team feel (simulated group)
 
