@@ -3,6 +3,24 @@ import { storage } from '../utils/storage';
 
 const KEY_UNLOCKED = 'darafsh.era.unlocked';
 const KEY_CURRENT = 'darafsh.era.current';
+let testing: boolean | undefined;
+let testSelection: number | undefined;
+let choseCampaignEra = false;
+
+export function isEraTestMode(): boolean {
+  return testing ?? (new URLSearchParams(window.location.search).get('god') === '1');
+}
+
+export function setEraTestMode(enabled: boolean): void {
+  if (enabled === isEraTestMode()) return;
+  testSelection = enabled ? currentIndex() : undefined;
+  if (!enabled) choseCampaignEra = true;
+  testing = enabled;
+}
+
+export function canSelectEra(index: number): boolean {
+  return ERAS[index]?.playable === true && (isEraTestMode() || isUnlocked(index));
+}
 
 /** Highest era index opened so far (0 = only the first era). */
 export function unlockedIndex(): number {
@@ -24,7 +42,8 @@ function urlEra(): number {
 }
 
 export function currentIndex(): number {
-  const forced = urlEra();
+  if (isEraTestMode() && testSelection !== undefined) return testSelection;
+  const forced = choseCampaignEra ? -1 : urlEra();
   if (forced >= 0) return forced;
   const i = ERAS.findIndex((e) => e.id === storage.get(KEY_CURRENT));
   return i >= 0 && isUnlocked(i) ? i : 0;
@@ -35,7 +54,12 @@ export function currentEra(): EraDef {
 }
 
 export function selectEra(index: number): boolean {
-  if (!isUnlocked(index)) return false;
+  if (!canSelectEra(index)) return false;
+  if (isEraTestMode()) {
+    testSelection = index;
+    return true;
+  }
+  choseCampaignEra = true;
   storage.set(KEY_CURRENT, ERAS[index].id);
   return true;
 }
@@ -45,6 +69,7 @@ export function selectEra(index: number): boolean {
  * time jump can take the player there), otherwise null («به‌زودی»).
  */
 export function completeEra(era: EraDef): EraDef | null {
+  if (isEraTestMode()) return null;
   const i = ERAS.indexOf(era);
   const next = ERAS[i + 1];
   if (!next) return null;

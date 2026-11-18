@@ -15,6 +15,8 @@ export interface SpawnGroup {
   x?: number | readonly number[];
   /** Chance each enemy of this group is an elite (hp×, gold trim, guaranteed drop). */
   elite?: number;
+  /** Shield-bearers with this trait need a golden arrow to break their armor. */
+  armored?: boolean;
 }
 
 export interface WaveDef {
@@ -63,6 +65,7 @@ export interface ScheduledSpawn {
   x: number;
   /** Spawn as an elite. */
   elite?: boolean;
+  armored?: boolean;
 }
 
 /** Flattens a wave into spawns sorted by time. Pure: `rand` supplies the random x positions. */
@@ -73,7 +76,7 @@ export function scheduleWave(wave: WaveDef, rand: () => number): ScheduledSpawn[
     for (let i = 0; i < count; i++) {
       const x = g.x === undefined ? rand() : typeof g.x === 'number' ? g.x : g.x[i % g.x.length];
       const elite = g.elite !== undefined && rand() < g.elite;
-      out.push({ at: g.at + i * (g.every ?? 0), type: g.type, x: Math.min(1, Math.max(0, x)), elite });
+      out.push({ at: g.at + i * (g.every ?? 0), type: g.type, x: Math.min(1, Math.max(0, x)), elite, ...(g.armored ? { armored: true } : {}) });
     }
   }
   return out.sort((a, b) => a.at - b.at);

@@ -6,7 +6,7 @@ import { BALANCE } from '../config/balance';
 import { DEPTH } from '../config/display';
 import { FEEL } from '../config/feel';
 import { ARENA } from '../data/arena';
-import { BOSS, type BossPoseDef } from '../data/entities';
+import { BOSS, ZAHHAK, type BossPoseDef } from '../data/entities';
 import { FINISHERS } from '../data/finishers';
 import { BendSprite, type Point } from '../render/BendSprite';
 import { services } from '../services';
@@ -50,7 +50,19 @@ export interface BossPoint {
  * sway, cloth wobble, glints). Pose changes cross-fade.
  */
 export class Boss {
-  readonly brain = new BossBrain({ ...BALANCE.boss, hp: Math.round(BALANCE.boss.hp * currentEra().bossHpScale * services.settings.difficulty.bossHpMul) }, FINISHERS.arash);
+  private readonly era = currentEra();
+  private readonly sasanian = this.era.id === 'sasanian';
+  private readonly anatomy = this.sasanian ? ZAHHAK : BOSS;
+  readonly brain = new BossBrain({
+    ...BALANCE.boss,
+    hp: Math.round(BALANCE.boss.hp * this.era.bossHpScale * services.settings.difficulty.bossHpMul),
+    ...(this.sasanian ? { armorAtPct: 0.64, stunMs: 4200 } : {}),
+  }, FINISHERS.arash);
+  serpentMouth(index: number): Point {
+    const mouth = ZAHHAK.serpents[index];
+    return this.body.worldPoint(mouth.x, mouth.y, { x: 0, y: 0 });
+  }
+
   /** Body + weak point, for arrows. */
   readonly target: Target;
   /** The golden barrier of the armor phase, for arrows. */
@@ -145,7 +157,7 @@ export class Boss {
       scene.add.image(0, 0, 'fx_glow').setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth);
     this.gemHalo = glow(0xff3a12);
     this.gemCore = glow(0xffc0a0);
-    this.eyes = BOSS.zones.boss_idle.eyes.map(() => glow(0xff4a1a));
+    this.eyes = this.anatomy.zones.boss_idle.eyes.map(() => glow(0xff4a1a));
     for (let i = 0; i < 3; i++) this.shine.push(scene.add.image(0, 0, 'fx_star').setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.boss + 2).setVisible(false));
     for (let i = 0; i < B.stun.stars; i++) {
       this.stars.push(scene.add.image(0, 0, 'fx_star').setTint(0xffe27a).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.boss + 3).setVisible(false));
@@ -395,7 +407,7 @@ export class Boss {
     this.updateStars(stunned);
     this.updateShine(dt, pose === BOSS.poses.idle && brain.state !== 'hidden');
     if (brain.lowHp && brain.fighting && Math.random() < ((brain.fury ? B.fury.embersPerSec : B.lowHp.embersPerSec) * dt) / 1000) {
-      const pt = BOSS.armor[Math.floor(Math.random() * BOSS.armor.length)];
+      const pt = this.anatomy.armor[Math.floor(Math.random() * this.anatomy.armor.length)];
       b.worldPoint(pt.x, pt.y, this.p);
       this.embers.emitParticleAt(this.p.x, this.p.y, services.settings.count(1));
     }
@@ -626,7 +638,7 @@ export class Boss {
   // ---------------------------------------------------------------- arrows
 
   private get zone(): BossPoseDef {
-    return BOSS.zones[this.body.pose] ?? BOSS.zones.boss_idle;
+    return this.anatomy.zones[this.body.pose] ?? this.anatomy.zones.boss_idle;
   }
 
   private zonePoint(which: 'body' | 'gem', out: Point): Point {
@@ -635,7 +647,7 @@ export class Boss {
   }
 
   private handPoint(out: Point): Point {
-    return this.body.worldPoint(BOSS.hand.x, BOSS.hand.y, out);
+    return this.body.worldPoint(this.anatomy.hand.x, this.anatomy.hand.y, out);
   }
 
   /** Does the ray from (ox, oy) along (dx, dy) pass through the gem? */
@@ -779,7 +791,7 @@ export class Boss {
     }
     this.shineT += dt;
     const k = this.shineT / I.shineMs;
-    const path = BOSS.shine[this.shineSide];
+    const path = this.anatomy.shine[this.shineSide];
     for (let i = 0; i < this.shine.length; i++) {
       // Each glint travels a bit behind the previous one along the pad edge.
       const u = k * 1.4 - i * 0.18;
@@ -898,13 +910,13 @@ export class Boss {
   private addCrack(): void {
     const C = B.cracks;
     if (this.cracks.length >= C.max) return;
-    const start = BOSS.armor[this.cracks.length % BOSS.armor.length];
+    const start = this.anatomy.armor[this.cracks.length % this.anatomy.armor.length];
     const pts = [start.x, start.y];
     let a = Math.random() * TAU;
     let x = start.x;
     let y = start.y;
     const n = Phaser.Math.Between(C.segments[0], C.segments[1]);
-    const body = BOSS.zones.boss_idle.body;
+    const body = this.anatomy.zones.boss_idle.body;
     const maxR = body.r * 0.95;
     for (let i = 0; i < n; i++) {
       a += Phaser.Math.FloatBetween(-0.7, 0.7);
@@ -951,7 +963,7 @@ export class Boss {
 
   /** Cracks in the wall where the knuckles hit it. */
   private knuckleCracks(size: number): void {
-    for (const k of BOSS.knuckles) {
+    for (const k of this.anatomy.knuckles) {
       this.body.worldPoint(k.x, k.y, this.p);
       this.wallCrack(this.p.x, this.p.y, size);
     }

@@ -3,6 +3,7 @@ import { ERA_COUNT, ERA_SKINS, MANIFEST_BY_KEY, SKINNABLE_KEYS } from '../../ass
 import { DIFFICULTIES } from '../../data/difficulty';
 import { BALANCE } from '../../config/balance';
 import { ERAS, combineMods } from '../../data/eras';
+import { WAVES, scheduleWave } from '../../data/waves';
 
 describe('eras', () => {
   it('have unique ids and years that move forward in time', () => {
@@ -17,6 +18,18 @@ describe('eras', () => {
 
   it('give every playable era enough waves before the boss', () => {
     for (const e of ERAS.filter((x) => x.playable)) expect(e.waves.length).toBeGreaterThanOrEqual(BALANCE.boss.afterWave);
+  });
+
+  it('introduces the Sasanian armor mechanic before mixing it with other enemies', () => {
+    const era = ERAS.find((e) => e.id === 'sasanian')!;
+    expect(era.waves).not.toBe(WAVES);
+    const waves = era.waves.map((wave) => scheduleWave(wave, () => 0.5));
+    expect(waves[0][0]).toMatchObject({ at: 0, type: 'shield', armored: true });
+    for (const wave of waves) {
+      expect(wave.some((spawn) => spawn.armored)).toBe(true);
+      expect(wave.filter((spawn) => spawn.armored).every((spawn) => spawn.type === 'shield')).toBe(true);
+    }
+    expect(waves[3].filter((spawn) => spawn.armored)).toHaveLength(2);
   });
 
   it('only use skin prefixes that the manifest knows, with every skinnable key registered', () => {

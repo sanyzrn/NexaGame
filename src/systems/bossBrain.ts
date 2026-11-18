@@ -21,7 +21,11 @@ export interface BossHitResult {
   blocked: boolean;
 }
 
-type BossTuning = Omit<typeof BALANCE.boss, 'hp'> & { hp: number };
+type BossTuning = Omit<typeof BALANCE.boss, 'hp' | 'armorAtPct' | 'stunMs'> & {
+  hp: number;
+  armorAtPct: number;
+  stunMs: number;
+};
 
 export interface FinisherTuning {
   triggerPct: number;
