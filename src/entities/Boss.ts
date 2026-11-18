@@ -11,6 +11,7 @@ import { FINISHERS } from '../data/finishers';
 import { BendSprite, type Point } from '../render/BendSprite';
 import { services } from '../services';
 import { BossBrain, type BossEvent } from '../systems/bossBrain';
+import { LIBRARY, WardWindow } from '../systems/libraryRules';
 import type { ArrowHit, HitOutcome, LockOn, Target } from '../systems/ProjectileSystem';
 import type { TimeCtl } from '../systems/TimeCtl';
 import { bump, easeInExpo, easeInOutSine, easeOutBack, easeOutCubic, Spring } from '../utils/ease';
@@ -52,11 +53,14 @@ export interface BossPoint {
 export class Boss {
   private readonly era = currentEra();
   private readonly sasanian = this.era.id === 'sasanian';
+  /** The Library of Bukhara: he starts behind the barrier and only a fire arrow opens it. */
+  private readonly samanid = this.era.id === 'samanid';
   private readonly anatomy = this.sasanian ? ZAHHAK : BOSS;
   readonly brain = new BossBrain({
     ...BALANCE.boss,
     hp: Math.round(BALANCE.boss.hp * this.era.bossHpScale * services.settings.difficulty.bossHpMul),
     ...(this.sasanian ? { armorAtPct: 0.64, stunMs: 4200 } : {}),
+    ...(this.samanid ? { armorAtPct: 0.62, stunMs: 3800, startsArmored: true } : {}),
   }, FINISHERS.arash);
   serpentMouth(index: number): Point {
     const mouth = ZAHHAK.serpents[index];
@@ -88,6 +92,9 @@ export class Boss {
   private readonly waistOcc: Phaser.GameObjects.Image[] = [];
   private readonly gemCore: Phaser.GameObjects.Image;
   private readonly gemHalo: Phaser.GameObjects.Image;
+  /** The open ink heart's aura (a fire arrow burned the parchment off it). */
+  private readonly weakHalo: Phaser.GameObjects.Image;
+  private readonly weak = new WardWindow(LIBRARY.exposeMs);
   private readonly eyes: Phaser.GameObjects.Image[];
   private readonly shine: Phaser.GameObjects.Image[] = [];
   private readonly stars: Phaser.GameObjects.Image[] = [];
@@ -135,6 +142,7 @@ export class Boss {
   private nextCrackPct = 1 - B.cracks.everyPct;
   private crackAlpha = 1;
   private lastGem = false;
+  private lastExposed = false;
   private hidden = false;
   /** The eye glows (the title lifts copies of them above its dusk grade). */
   get eyeGlows(): readonly Phaser.GameObjects.Image[] {
@@ -157,6 +165,7 @@ export class Boss {
       scene.add.image(0, 0, 'fx_glow').setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth);
     this.gemHalo = glow(0xff3a12);
     this.gemCore = glow(0xffc0a0);
+    this.weakHalo = glow(0xffb060, DEPTH.boss + 2).setVisible(false);
     this.eyes = this.anatomy.zones.boss_idle.eyes.map(() => glow(0xff4a1a));
     for (let i = 0; i < 3; i++) this.shine.push(scene.add.image(0, 0, 'fx_star').setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.boss + 2).setVisible(false));
     for (let i = 0; i < B.stun.stars; i++) {
@@ -261,6 +270,22 @@ export class Boss {
     return this.lastGem;
   }
 
+  /** The last arrow went through the gem while the ink heart was open. */
+  get weakHit(): boolean {
+    return this.lastExposed;
+  }
+
+  /** The ink heart is open: arrows through the gem get past the barrier and stun him. */
+  get weakOpen(): boolean {
+    return this.weak.isOpen;
+  }
+
+  /** A fire arrow hit him: burn the charred parchment off the ink heart for a few seconds. */
+  exposeWeak(ms?: number): void {
+    this.weak.open(ms);
+    this.gemFlare = 1;
+  }
+
   /** World position of the gem (the finisher's target). */
   gemPoint(out: Point): Point {
     return this.zonePoint('gem', out);
@@ -352,6 +377,7 @@ export class Boss {
     this.t += dt;
     const brain = this.brain;
     brain.tick(dt);
+    this.weak.tick(dt);
     for (const e of brain.events) this.onBrainEvent(e);
     brain.events.length = 0;
     if (this.hidden) return;
@@ -690,14 +716,18 @@ export class Boss {
 
   private onArrow(hit: ArrowHit): HitOutcome {
     const gem = this.throughGem(hit.x, hit.y, hit.dirX, hit.dirY);
-    const res = this.brain.hit({ damage: hit.damage, crit: hit.crit, gem });
+    // While the ink heart is open, a gem hit counts as a critical one: it gets through the armour
+    // and stuns him, exactly as a golden arrow does.
+    const exposed = gem && this.weak.isOpen;
+    const res = this.brain.hit({ damage: hit.damage, crit: hit.crit || exposed, gem });
     this.lastGem = gem;
+    this.lastExposed = exposed;
     for (const e of this.brain.events) this.onBrainEvent(e);
     this.brain.events.length = 0;
     if (res.blocked) return 'blocked';
     // The event reports what he actually took (gem, stun multipliers).
     hit.damage = res.damage;
-    if (gem && hit.crit) this.recoil(hit.dirX >= 0 ? 1 : -1);
+    if (gem && (hit.crit || exposed)) this.recoil(hit.dirX >= 0 ? 1 : -1);
     else this.flinch(hit.dirX >= 0 ? 1 : -1);
     while (this.brain.hpPct <= this.nextCrackPct && this.nextCrackPct > 0) {
       this.addCrack();
@@ -758,6 +788,14 @@ export class Boss {
       .setScale(base * (I.gemScale[0] + (I.gemScale[1] - I.gemScale[0]) * pulse) * boost * (1 + this.gemFlare * (B.recoil.gemFlare - 1)))
       .setAlpha(I.gemAlpha[0] + (I.gemAlpha[1] - I.gemAlpha[0]) * pulse);
     this.gemCore.setPosition(this.p.x, this.p.y).setScale(base * 0.55 * boost).setAlpha(0.4 + 0.6 * pulse);
+    // The open ink heart: a hot aura around the gem that fades as the window closes.
+    if (this.weak.isOpen && this.brain.fighting) {
+      this.weakHalo.setVisible(true).setPosition(this.p.x, this.p.y)
+        .setScale(base * (2.6 + 0.5 * Math.sin(this.t / 80)))
+        .setAlpha(0.22 + 0.5 * this.weak.progress);
+    } else if (this.weakHalo.visible) {
+      this.weakHalo.setVisible(false);
+    }
 
     const roar = this.body.pose === BOSS.poses.roar;
     const flicker = 0.5 + 0.5 * Math.sin(this.t / 97) * Math.sin(this.t / 61);

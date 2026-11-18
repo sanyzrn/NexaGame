@@ -106,6 +106,43 @@ const SASANIAN_WAVES: readonly WaveDef[] = [
   ] },
 ];
 
+/**
+ * Samanid waves — the library's shelves, its lamps and the things feeding on them. Four distinct
+ * waves (the Div rises after four): moths at the reading lamps, shield-bearing scribes in the
+ * gallery, candle-bombers between the shelves, then everything the fire woke at once.
+ */
+const SAMANID_WAVES: readonly WaveDef[] = [
+  // 1 — moth-flight around the lamps: read the room, don't stand still.
+  { spawns: [
+    { at: 0, type: 'flyer', count: 2, every: 900, x: [0.3, 0.7] },
+    { at: 3200, type: 'imp', count: 3, every: 700, x: [0.2, 0.5, 0.8] },
+    { at: 7200, type: 'flyer', count: 2, every: 1100, x: [0.14, 0.86] },
+    { at: 9800, type: 'imp', count: 2, every: 650, x: [0.4, 0.6] },
+  ] },
+  // 2 — the scribes: shields in front, slingers reading from the gallery.
+  { spawns: [
+    { at: 0, type: 'shield', armored: true, count: 2, every: 2600, x: [0.33, 0.67] },
+    { at: 2600, type: 'slinger', count: 2, every: 1700, x: [0.17, 0.83] },
+    { at: 7600, type: 'imp', count: 4, every: 700, x: [0.24, 0.42, 0.58, 0.76] },
+  ] },
+  // 3 — candle-demons and burnt pages: bombers between the shelves, wraiths through the stacks.
+  { spawns: [
+    { at: 0, type: 'bomber', count: 2, every: 3400, x: [0.27, 0.73] },
+    { at: 2500, type: 'wraith', count: 2, every: 2800, x: [0.41, 0.59] },
+    { at: 5400, type: 'flyer', count: 3, every: 950, x: [0.2, 0.8, 0.5] },
+    { at: 9000, type: 'slinger', x: 0.5 },
+  ] },
+  // 4 — the shelves catch fire: everything at once, tightest spawns of the era.
+  { spawns: [
+    { at: 0, type: 'imp', count: 5, every: 700, x: [0.2, 0.35, 0.5, 0.65, 0.8] },
+    { at: 2400, type: 'shield', armored: true, x: 0.5 },
+    { at: 4300, type: 'bomber', count: 2, every: 3800, x: [0.22, 0.78] },
+    { at: 6800, type: 'wraith', count: 2, every: 3000, x: [0.34, 0.66] },
+    { at: 9000, type: 'flyer', count: 3, every: 900, x: [0.18, 0.5, 0.82] },
+    { at: 11800, type: 'slinger', count: 2, every: 2100, x: [0.2, 0.8] },
+  ] },
+];
+
 const sharedEra = (skin: string, id: string, name: string, year: string, yearNum: number, place: string, bossName: string, weapon: string, arrival: string, testTint: number): EraDef => ({
   id, name, year, yearNum, place, bossName, weapon, arrival,
   rule: 'نبرد آزمایشی با موج‌های مشترک',
@@ -170,7 +207,25 @@ export const ERAS: readonly EraDef[] = [
     waves: SASANIAN_WAVES,
     playable: true,
   },
-  sharedEra('e4', 'samanid', 'سامانی', '۸۱۹ میلادی', 819, 'کتابخانهٔ بخارا', 'دیو کتاب‌سوز', 'کمان خراسانی', 'شش سده گذشت… زبان پارسی دوباره زنده شد', 0x3a8a6a),
+  {
+    id: 'samanid',
+    name: 'سامانی',
+    year: '۸۱۹ میلادی',
+    yearNum: 819,
+    place: 'کتابخانهٔ بخارا',
+    bossName: 'دیو کتاب‌سوز',
+    weapon: 'کمان خراسانی',
+    rule: 'تیر از شعلهٔ چراغ آتش می‌گیرد؛ تیر آتشین قلب دیو را می‌گشاید',
+    arrival: 'شش سده گذشت… زبان پارسی دوباره زنده شد',
+    skin: 'e4',
+    testTint: 0x3a8a6a,
+    grade: { top: '#f4dca8', mid: '#9a7a52', bottom: '#2a1a12', alpha: 0.2 },
+    mods: { scoreMul: 1.3 },
+    hpScale: 1.22,
+    bossHpScale: 1.3,
+    waves: SAMANID_WAVES,
+    playable: true,
+  },
   sharedEra('e5', 'ghaznavid', 'غزنوی', '۹۷۷ میلادی', 977, 'کاخ غزنین', 'فیل‌دیو جنگی', 'کمان فیل‌سوار', 'فردوسی شاهنامه را می‌سراید…', 0x8a6a3a),
   sharedEra('e6', 'seljuk', 'سلجوقی', '۱۰۳۷ میلادی', 1037, 'کاروانسرای کویر', 'غول بیابان', 'تیر نفتی', 'کاروان‌ها در خطرند', 0xc8a040),
   sharedEra('e7', 'khwarazmian', 'خوارزمشاهی', '۱۰۷۷ میلادی', 1077, 'دروازهٔ گرگانج', 'دیو یخ‌زده', 'کمان استپ', 'باد سرد از شمال می‌وزد', 0x6aa0c8),

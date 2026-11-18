@@ -52,6 +52,10 @@ Four waves, then the White Div rises.
 - **Fire arrows:** two braziers stand inside the arena, high on the side walls. An arrow that passes through a flame **catches fire**: a burning trail, and the next enemy hit **burns** for 2 s. Fire ignores nothing — but it lights bombers instantly and pins wraiths solid.
 - **Pots:** three clay pots stand on the floor. One arrow breaks each (the arrow flies on), spilling **coins** (score + power), a **heart**, or a **سه‌تیر bundle** — the next three releases each loose a fan of three arrows.
 
+### سامانی — کتابخانهٔ بخارا
+
+The fourth era is a burning library. Three lamps stand on the field (the two braziers plus a brass reading lamp on the Div's line); an arrow through a flame catches fire, and **a fire arrow that reaches the Book-Burning Div burns the parchment off his ink heart for 3.6 s** — in that window a normal arrow through the chest gem gets past the armour he starts the fight behind and stuns him. He breathes cold and snuffs a lamp every 9.5–13.5 s; shoot through another lamp, or put a fire arrow into the dark one to relight it (lamps also relight themselves after 9 s). The lamp under your aim line flares, so the shot that would catch fire is visible before you loose it. `?era=samanid` plays it. Design note: [docs/SAMANID_ERA.md](docs/SAMANID_ERA.md).
+
 ### فال لشکر — the omen of the day
 
 One omen is drawn each **day, shared by everyone** (seeded by the UTC date — the whole group fights the same day). It colours the arena for the whole run and bends it one way:
@@ -230,7 +234,7 @@ The Derafsh travels through 17 eras of Iranian history, from the Achaemenids thr
 
 - **Title menu:** «نبرد!», an info line (era · year · difficulty), «⏳ زمان‌ها» (the era wall) and «⚔ سختی» (the difficulty picker). Pause and Result both have a way back to the main menu.
 - **Era wall** (`EraSelectScene`): a scrolling grid of cards with a preview of each era's battlefield. Locked cards explain how they open and upcoming chapters are marked «به‌زودی».
-- Eras are data in `src/data/eras.ts` (names, year, place, boss, one signature rule, hp scales, waves). Eras 1–2 are playable.
+- Eras are data in `src/data/eras.ts` (names, year, place, boss, one signature rule, hp scales, waves). Eras 1–4 are playable.
 - **Difficulty** (`src/data/difficulty.ts`): آسان / معمولی / سخت / افسانه‌ای changes hearts, enemy hp and speed, boss hp and the score multiplier; saved on the device.
 - Each era has its own arena painting. The game loads the active era's full battlefield and fetches small card previews only when the era wall opens. Era N re-skins sprites through `Art` with the prefix `eN_` (e.g. `assets-src/e2_hero_idle.png`); missing sprite skins use recoloured **test art**.
 - The full art brief (file names, sizes, prompts for every era) is in [docs/ERA_ASSETS.md](docs/ERA_ASSETS.md); the idea bank is [docs/IDEAS.md](docs/IDEAS.md).

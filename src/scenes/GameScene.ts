@@ -9,6 +9,7 @@ import { DEPTH, DESIGN_H, DESIGN_W } from '../config/display';
 import { FEEL } from '../config/feel';
 import { ARENA } from '../data/arena';
 import { HERO, PILLAR } from '../data/entities';
+import { SAMANID_DECOR } from '../data/lamps';
 import { FINISHERS } from '../data/finishers';
 import { Moments } from '../data/moments';
 import { combineMods, type EraDef } from '../data/eras';
@@ -22,6 +23,8 @@ import { Pot, type PotLoot } from '../entities/Pot';
 import { Atmosphere } from '../render/Atmosphere';
 import { services } from '../services';
 import { AimSystem } from '../systems/AimSystem';
+import { BookWard } from '../systems/BookWard';
+import { LibraryLamps } from '../systems/LibraryLamps';
 import { AimView } from '../systems/AimView';
 import { ArenaCollider } from '../systems/ArenaCollider';
 import { shotFor } from '../systems/charge';
@@ -152,6 +155,9 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private era!: EraDef;
   private testRun = false;
   private armorTipShown = false;
+  /** The Library of Bukhara (Samanid era): its lamps and the Div's cold breath. */
+  private library: LibraryLamps | null = null;
+  private ward: BookWard | null = null;
   /** The era's rule combined with the day's omen. */
   private rules: OmenMods = {};
   /** The run's time of day / season (data/moods.ts). */
@@ -221,7 +227,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     const fx = (this.fx = new FX(this, this.timeCtl));
     this.atmosphere = new Atmosphere(this, this.timeCtl, this.era.skin === null);
     this.boss = new Boss(this, this.timeCtl);
-    this.decor = new Decor(this, this.timeCtl, ARENA.decor, ARENA.pillars);
+    this.decor = new Decor(this, this.timeCtl, this.era.id === 'samanid' ? SAMANID_DECOR : ARENA.decor, ARENA.pillars);
     this.collider = new ArenaCollider(ARENA.walls, ARENA.pillars.map((p) => ({
       x: p.x + PILLAR.collision.x, y: p.y + PILLAR.collision.y, w: PILLAR.collision.w, h: PILLAR.collision.h,
     })));
@@ -392,8 +398,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       },
     });
 
-    // An arrow through a brazier's flame catches fire.
-    for (const f of this.decor.flames()) this.fireZones.push({ x: f.x, y: f.y, r: ARENA.fireRadius });
+    // An arrow through a flame catches fire: the braziers, and the era's lamps.
+    this.rebuildFireZones();
     this.projectiles.fireZones = () => this.fireZones;
     this.projectiles.onIgnite.add(({ x, y }) => {
       this.fx.flameLick(x, y);
@@ -401,6 +407,21 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       services.audio.play('fireHit');
       services.haptics.play('tick');
     });
+
+    // The Library of Bukhara: three lamps the Div can snuff, and the fire arrow that opens him.
+    if (this.era.id === 'samanid') {
+      this.library = new LibraryLamps(this.decor.lamps(), fx);
+      this.ward = new BookWard({
+        lamps: this.library,
+        boss: this.boss,
+        fx,
+        hud: this.hud,
+        onZonesChanged: () => this.rebuildFireZones(),
+      });
+      this.rebuildFireZones();
+      this.projectiles.onLampTouch.add(({ lamp }) => this.ward?.touchLamp(lamp));
+      this.exposeWardForTests();
+    }
 
     // Speed lines while the bow is fully drawn.
     this.speedLines = this.add.image(DESIGN_W / 2, DESIGN_H / 2, 'fx_speedlines')
@@ -782,6 +803,11 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     this.atmosphere.update(realMs);
     this.happenings.update(dt, this.mode === 'play' && !this.ended);
     this.decor.update(dt);
+    this.ward?.update(dt);
+    // The lamp under the aim line flares: the shot that would catch fire, before it is loosed.
+    if (this.ward && aim.aiming && !aim.cancelling) {
+      this.ward.aimThrough(this.hero.bowX, this.hero.bowY, aim.dirX, aim.dirY);
+    }
     this.boss.update(dt);
     this.simorgh.update(dt);
     this.hero.update(realMs, aim);
@@ -984,6 +1010,29 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     boss.onFinisher.add(() => this.startFinisher());
   }
 
+  // ---------------------------------------------------------------- the library's lamps
+
+  /** The flames an arrow can cross: braziers, plus the era's lamps (dark ones can be relit). */
+  private rebuildFireZones(): void {
+    this.fireZones.length = 0;
+    for (const f of this.decor.ignitionFlames()) this.fireZones.push({ x: f.x, y: f.y, r: ARENA.fireRadius });
+    if (this.library) for (const z of this.library.zones()) this.fireZones.push(z);
+  }
+
+  /** Dev / `?qa=1`: the lamp and weak-point state, so an automated layout test can drive it. */
+  private exposeWardForTests(): void {
+    if (!import.meta.env.DEV && !new URLSearchParams(window.location.search).has('qa')) return;
+    (window as unknown as { __ward?: unknown }).__ward = {
+      era: this.era.id,
+      lamps: () => this.ward?.lampStates ?? [],
+      snuff: () => this.ward?.debugSnuff() ?? -1,
+      expose: () => this.ward?.ignite(),
+      weakOpen: () => this.boss.weakOpen,
+      bossState: () => this.boss.state,
+      zones: () => this.fireZones.length,
+    };
+  }
+
   // ---------------------------------------------------------------- arrows
 
   private onArrowHit(e: HitEvent): void {
@@ -1022,8 +1071,11 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       if (e.outcome === 'blocked') {
         fx.clang(e.x, e.y);
         audio.play('clang');
+        if (this.era.id === 'samanid') this.ward?.armourTip();
         return;
       }
+      // A fire arrow burns the parchment off his ink heart: the only way through his armour.
+      if (e.fire) this.ward?.ignite();
       this.bossDamage += e.damage;
       this.damageDealt += e.damage;
       this.hud.setBossHp(boss.brain.hpPct);
@@ -1035,6 +1087,12 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.numbers.spawn(e.x, e.y - 40, e.damage, e.crit || gem);
       fx.hitSparks(e.x, e.y, e.crit, gem ? 0xff4a2a : 0xfff0d0);
       audio.play('bossHit', big ? 1.4 : 1);
+      if (boss.weakHit) {
+        // The open ink heart took the shot: make it unmistakable.
+        fx.ring(e.x, e.y, 0xffb060, 5, 1, 420);
+        fx.sparkleAt(e.x, e.y, 40);
+        this.hud.showToast('قلب جوهری سوخت', 'دیو مبهوت شد — فرصت را از دست نده');
+      }
       if (big) {
         const R = FEEL.boss.recoil;
         this.timeCtl.hitStop(R.hitStopMs);

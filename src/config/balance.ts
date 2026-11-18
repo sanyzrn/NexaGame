@@ -124,6 +124,8 @@ export const BALANCE = {
     gemMultiplier: 2,
     /** At 50% a barrier forms: only golden (critical) arrows get through it. */
     armorAtPct: 0.5,
+    /** Some eras start behind the barrier (the Samanid Div): a fire arrow opens the only way in. */
+    startsArmored: false,
     /** A golden arrow into the gem while armored stuns him: barrier down, more damage taken. */
     stunMs: 3200,
     stunDamageMultiplier: 1.5,

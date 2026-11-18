@@ -16,6 +16,8 @@ export interface DecorDef {
   y: number;
   scale: number;
   flip?: boolean;
+  /** A brazier that belongs to the era's lamp puzzle: the boss can snuff it and it can be relit. */
+  lamp?: boolean;
 }
 
 interface Animated {
@@ -35,6 +37,7 @@ export class Decor {
   private readonly items: Animated[] = [];
   private readonly sparks: Emitter;
   private readonly braziers: Brazier[] = [];
+  private readonly puzzleLamps: Brazier[] = [];
   /** The omen of the day can fan the flames (fireMul > 1 = bigger, brighter). */
   fireMul = 1;
 
@@ -58,14 +61,25 @@ export class Decor {
         const b = new Brazier(scene, d, this.sparks);
         this.items.push(b);
         this.braziers.push(b);
+        if (d.lamp) this.puzzleLamps.push(b);
       } else if (d.key === 'banner') this.items.push(new Banner(scene, d));
       else staticProp(scene, d.key, d.x, d.y, d.scale, d.key === 'pot' ? PROPS.pot.shadow : null, d.flip);
     }
   }
 
-  /** World positions of the brazier flames (an arrow through one catches fire). */
+  /** World positions of the brazier flames (used by the sky's fire glow). */
   flames(): readonly { x: number; y: number }[] {
     return this.braziers;
+  }
+
+  /** The era's lamp puzzle braziers (empty outside the Samanid era). */
+  lamps(): readonly Brazier[] {
+    return this.puzzleLamps;
+  }
+
+  /** Braziers that light arrows and are not part of a lamp puzzle. */
+  ignitionFlames(): readonly { x: number; y: number }[] {
+    return this.braziers.filter((b) => b.lit && !this.puzzleLamps.includes(b));
   }
 
   update(dt: number): void {
@@ -86,7 +100,7 @@ function staticProp(scene: Phaser.Scene, key: string, x: number, y: number, scal
   if (shadow) new Shadow(scene, shadow, scale).place(x, y);
 }
 
-class Brazier implements Animated {
+export class Brazier implements Animated {
   private readonly outer: Phaser.GameObjects.Image;
   private readonly inner: Phaser.GameObjects.Image;
   private readonly glow: Phaser.GameObjects.Image;
@@ -95,6 +109,10 @@ class Brazier implements Animated {
   private readonly flameScale: number;
   /** Set by Decor.fireMul (the omen of the day). */
   mul = 1;
+  /** A snuffed lamp keeps its bowl and a dim ember, but stops lighting arrows. */
+  lit = true;
+  private flareMs = 0;
+  private flareMax = 600;
   private readonly seed = Math.random() * 100;
   private t = Math.random() * 10000;
   private sparkIn = 0;
@@ -104,6 +122,22 @@ class Brazier implements Animated {
   }
   get y(): number {
     return this.fy - 30; // the flame's heart, a little above the bowl
+  }
+
+  /** Puts the flame out / brings it back. The bowl and its glow stay: a lamp, not a hole. */
+  setLit(lit: boolean): void {
+    if (this.lit === lit) return;
+    this.lit = lit;
+    this.outer.setVisible(lit);
+    this.inner.setVisible(lit);
+    this.glow.setTint(lit ? FEEL.brazier.glow.tint : 0x6a3a1a);
+    if (lit) this.flare(500);
+  }
+
+  /** A bright pulse: aim crossing the flame, a relight, a snuff. */
+  flare(ms: number): void {
+    this.flareMax = Math.max(1, ms);
+    this.flareMs = ms;
   }
 
   constructor(scene: Phaser.Scene, d: DecorDef, private readonly sparks: Emitter) {
@@ -129,12 +163,15 @@ class Brazier implements Animated {
     const B = FEEL.brazier;
     const a = wobble(this.t, this.seed);
     const b = wobble(this.t * 1.3, this.seed + 5);
-    const s = this.flameScale * this.mul;
+    const flare = this.flareMs > 0 ? this.flareMs / this.flareMax : 0;
+    if (this.flareMs > 0) this.flareMs = Math.max(0, this.flareMs - dt);
+    const s = this.flameScale * this.mul * (1 + 0.4 * flare);
     this.outer.setScale(s * (1 + a * B.flicker.w), s * (1 + b * B.flicker.h)).setAlpha(B.flameAlpha * (0.85 + 0.15 * a)).setRotation(a * 0.06);
     this.inner.setScale(s * 0.6 * (1 + b * 0.08), s * 0.62 * (1 + a * 0.18)).setAlpha(B.flameAlpha * (0.9 + 0.1 * b)).setRotation(b * 0.05);
     const g = 0.5 + 0.5 * (a * 0.7 + b * 0.3);
     this.glow.setAlpha(B.glow.alpha[0] + (B.glow.alpha[1] - B.glow.alpha[0]) * g);
 
+    if (!this.lit) return;
     this.sparkIn -= dt;
     if (this.sparkIn <= 0) {
       this.sparkIn = Phaser.Math.Between(B.sparkEveryMs[0], B.sparkEveryMs[1]);

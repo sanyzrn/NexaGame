@@ -21,10 +21,11 @@ export interface BossHitResult {
   blocked: boolean;
 }
 
-type BossTuning = Omit<typeof BALANCE.boss, 'hp' | 'armorAtPct' | 'stunMs'> & {
+type BossTuning = Omit<typeof BALANCE.boss, 'hp' | 'armorAtPct' | 'stunMs' | 'startsArmored'> & {
   hp: number;
   armorAtPct: number;
   stunMs: number;
+  startsArmored: boolean;
 };
 
 export interface FinisherTuning {
@@ -81,7 +82,12 @@ export class BossBrain {
   }
 
   introDone(): void {
-    if (this.state === 'intro') this.state = 'phase1';
+    if (this.state !== 'intro') return;
+    // Some eras open behind the barrier: the weak point has to be opened before anything lands.
+    if (this.cfg.startsArmored) {
+      this.state = 'armor';
+      this.events.push('armor');
+    } else this.state = 'phase1';
   }
 
   hit(h: BossHit): BossHitResult {

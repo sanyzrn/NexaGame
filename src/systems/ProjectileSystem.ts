@@ -72,6 +72,17 @@ export interface ArrowHit {
   bounces: number;
 }
 
+/** A flame an arrow can cross: a brazier, or one of the era's lamps (dark lamps can be relit). */
+export interface FireZone {
+  x: number;
+  y: number;
+  r: number;
+  /** False: the flame is out (a fire arrow through it relights the lamp). */
+  lit?: boolean;
+  /** Index of the era lamp this zone belongs to, when it is one. */
+  lamp?: number;
+}
+
 export interface HitEvent extends ArrowHit {
   target: Target;
   outcome: HitOutcome;
@@ -131,11 +142,13 @@ export class ProjectileSystem {
   readonly onEnd = new Signal<ArrowEndEvent>();
   /** An arrow just caught fire in a brazier's flame. */
   readonly onIgnite = new Signal<{ x: number; y: number }>();
+  /** A burning arrow crossed a dark lamp: it can be relit. */
+  readonly onLampTouch = new Signal<{ lamp: number }>();
 
   /** A wind across the arena (the omen of the day): arrows curve by this many deg/s. */
   driftDegPerSec = 0;
   /** Brazier flames: an arrow passing within r of a flame centre catches fire. */
-  fireZones: (() => readonly { x: number; y: number; r: number }[] | null) | null = null;
+  fireZones: (() => readonly FireZone[] | null) | null = null;
 
   private readonly arrows: Arrow[] = [];
   private readonly sh: StaticHit = { t: 0, nx: 0, ny: 0, kind: 'wall', bounces: false };
@@ -304,8 +317,9 @@ export class ProjectileSystem {
 
       const nx = a.x + a.dx * travel;
       const ny = a.y + a.dy * travel;
-      // A brazier flame crossed by this segment lights the arrow (segment test: frame-rate safe).
-      if (!a.fire && this.fireZones) {
+      // A flame crossed by this segment lights the arrow; a burning arrow relights a dark lamp
+      // (segment test: frame-rate safe).
+      if (this.fireZones) {
         const zones = this.fireZones();
         if (zones) {
           const sx = nx - a.x;
@@ -316,12 +330,16 @@ export class ProjectileSystem {
             t = t < 0 ? 0 : t > 1 ? 1 : t;
             const px = a.x + sx * t - z.x;
             const py = a.y + sy * t - z.y;
-            if (px * px + py * py <= z.r * z.r) {
-              a.fire = true;
-              a.img.setTint(FEEL.fire.arrowTint);
-              this.onIgnite.emit({ x: a.x + sx * t, y: a.y + sy * t });
-              break;
+            if (px * px + py * py > z.r * z.r) continue;
+            if (z.lit === false) {
+              if (a.fire && z.lamp !== undefined) this.onLampTouch.emit({ lamp: z.lamp });
+              continue;
             }
+            if (a.fire) continue;
+            a.fire = true;
+            a.img.setTint(FEEL.fire.arrowTint);
+            this.onIgnite.emit({ x: a.x + sx * t, y: a.y + sy * t });
+            break;
           }
         }
       }
