@@ -1,6 +1,7 @@
-import { MOCK_GROUP } from '../config/team';
+import { MOCK_GROUP, type School } from '../config/team';
 import { faNum } from '../utils/fa';
 import { appLink, encodeStartParam } from './links';
+import type { TeamApi, TeamView } from './TeamApi';
 import { storage } from '../utils/storage';
 import { Chain } from './chain';
 import type {
@@ -10,6 +11,16 @@ import { MockGroupSession, type MockGroupState } from './MockGroupSession';
 import type { TelegramBridge } from './TelegramBridge';
 
 const BEST_KEY = 'darafsh.bestScore';
+/** How many real teammates are in the fight from the first second (the rest "join" during it). */
+const REAL_ACTIVE = 4;
+const SCHOOL_ORDER: readonly School[] = ['rostami', 'arashi', 'simorghi'];
+
+/** A stable school per teammate, so the same friend keeps the same colour and powers. */
+function schoolFor(id: string): School {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) % 9973;
+  return SCHOOL_ORDER[hash % SCHOOL_ORDER.length];
+}
 
 /** Local, backend-free implementation used by the demo. The group (config/team.ts) is simulated. */
 export class MockGameService implements GameService {
@@ -24,22 +35,64 @@ export class MockGameService implements GameService {
     recent: [],
   };
 
-  constructor(private readonly telegram: TelegramBridge) {}
+  /** True while `group.members` is the player's real Telegram team rather than the demo line-up. */
+  private realRoster = false;
+
+  constructor(
+    private readonly telegram: TelegramBridge,
+    /** Real teams through game-auth; absent in a pure browser build. */
+    private readonly team?: TeamApi,
+  ) {}
+
+  /** The signed-in player's team, or null (demo build, no team, or the backend is unreachable). */
+  private async realTeam(): Promise<TeamView | null> {
+    if (!this.team) return null;
+    await this.team.ready();
+    return this.team.team;
+  }
 
   async getProfile(): Promise<PlayerProfile> {
     const bestScore = Number(storage.get(BEST_KEY) ?? 0) || 0;
     return { id: this.telegram.userId ?? 'guest', name: this.telegram.userFirstName ?? 'پهلوان', bestScore };
   }
 
+  /**
+   * The group shown on the title and used during a run: the player's real Telegram team when they
+   * have one, otherwise the demo line-up. Boss HP and damage stay simulated (real-time combat is a
+   * later task); only the roster and its names are real.
+   */
   async getGroup(): Promise<GroupInfo> {
+    const team = await this.realTeam();
     const g = this.group;
+    if (team) {
+      this.realRoster = true;
+      g.name = team.name;
+      g.members = team.members.map((m, i) => ({
+        id: m.id,
+        name: m.name,
+        school: schoolFor(m.id),
+        active: i < REAL_ACTIVE,
+      }));
+    } else if (this.realRoster) {
+      // Signed in without a team (or back in the demo): never leave a stale real roster behind.
+      this.realRoster = false;
+      g.name = MOCK_GROUP.name;
+      g.members = MOCK_GROUP.members.map((m) => ({ ...m }));
+    }
     const members = (g.members.length ? g.members : MOCK_GROUP.members).map((m) => ({ ...m }));
-    return { id: MOCK_GROUP.id, name: g.name, bossName: g.bossName, bossHpMax: g.hpMax, bossHp: g.hp, members };
+    return {
+      id: team ? team.id : MOCK_GROUP.id,
+      name: g.name,
+      bossName: g.bossName,
+      bossHpMax: g.hpMax,
+      bossHp: g.hp,
+      members,
+    };
   }
 
   async joinGroup(): Promise<GroupSession> {
-    // Every run starts with the configured line-up: some members in the fight, the rest joining.
-    this.group.members = MOCK_GROUP.members.map((m) => ({ ...m }));
+    // Syncs the roster (real team or demo line-up) before the run's simulated session starts.
+    await this.getGroup();
     return new MockGroupSession(this.group);
   }
 

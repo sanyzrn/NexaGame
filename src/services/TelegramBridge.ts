@@ -118,6 +118,11 @@ export class TelegramBridge {
     return (this.isTelegram && this.webApp!.initDataUnsafe.user?.first_name) || null;
   }
 
+  /** The raw initData Telegram signed for this session (empty outside Telegram). */
+  get initData(): string {
+    return this.isTelegram ? this.webApp!.initData : '';
+  }
+
   /** The Mini App's start parameter (t.me/bot/app?startapp=…), null outside Telegram. */
   get startParam(): string | null {
     return (this.isTelegram && this.webApp!.initDataUnsafe.start_param) || null;

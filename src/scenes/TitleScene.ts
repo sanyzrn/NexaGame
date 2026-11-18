@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CALLIGRAPHY_FONT, DESIGN_W, FONT_FAMILY } from '../config/display';
+import { CALLIGRAPHY_FONT, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { FEEL } from '../config/feel';
 import { SCHOOLS, type School } from '../config/team';
 import { loadEraArt } from '../assets/eraSkins';
@@ -7,8 +7,10 @@ import { ERAS } from '../data/eras';
 import { pickOmen } from '../data/omens';
 import { currentIndex, selectEra, unlockedIndex } from '../systems/eraProgress';
 import { DIFFICULTIES } from '../data/difficulty';
-import { readStartParam } from '../services/links';
+import { forgetTeamInvite, readStartParam } from '../services/links';
 import { services } from '../services';
+import { TeamApiError } from '../services/TeamApi';
+import { INVITE_CONFIRM_HINT, INVITE_STATUS_TEXT, teamErrorText } from '../services/teamText';
 import type { GroupMember } from '../services/GameService';
 import { avatarColor, avatarTex } from '../ui/avatar';
 import { Button } from '../ui/Button';
@@ -49,6 +51,11 @@ export class TitleScene extends Phaser.Scene {
   private eyeTaps = 0;
   private eyeWoke = false;
   private readonly eyeP = { x: 0, y: 0 };
+  /** The group chip, so it can be redrawn after the roster changes (joining a team). */
+  private chip: Phaser.GameObjects.Container | null = null;
+  private topInset = 0;
+  /** A team-invite card is open: «نبرد!» waits until it is answered. */
+  private teamCardOpen = false;
 
   constructor() {
     super('Title');
@@ -60,6 +67,9 @@ export class TitleScene extends Phaser.Scene {
     this.layer = [];
     const ins = services.safeArea.designInsets(this.scale.canvasBounds, DESIGN_W, 1920);
     const top = Math.round(ins.top);
+    this.topInset = top;
+    this.chip = null;
+    this.teamCardOpen = false;
     this.schoolCards = [];
     this.eyeTaps = 0;
     this.eyeWoke = false;
@@ -224,6 +234,11 @@ export class TitleScene extends Phaser.Scene {
   private buildInvite(): void {
     const p = readStartParam(services.telegram.startParam);
     if (!p) return;
+    // A real team invite asks first, in its own card (the code is only redeemed on «بپیوند»).
+    if (p.kind === 'team') {
+      void this.buildTeamInvite(p.code);
+      return;
+    }
     const text = p.kind === 'challenge'
       ? `${p.name} تو را به چالش کشید: رکوردش ${faNum(p.score)}`
       : `${p.from} تو را به لشکر فراخواند!`;
@@ -234,6 +249,97 @@ export class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: c, alpha: 1, y: { from: BEST_Y + 50, to: BEST_Y }, duration: 600, delay: 1700, ease: 'Back.easeOut' });
     this.tweens.add({ targets: c, angle: { from: -1.2, to: 1.2 }, duration: 1600, yoyo: true, repeat: -1, delay: 2300, ease: 'Sine.easeInOut' });
     this.layer.push(c);
+  }
+
+  /**
+   * A real team invite (`t_<code>`): a confirmation card before anything is joined. Every refusal
+   * has its own line — an invalid, expired or used code, a full team, another team — so the player
+   * knows whether to ask for a fresh invite. Joining refreshes the group chip with the real roster.
+   */
+  private async buildTeamInvite(code: string): Promise<void> {
+    const preview = await services.team.previewInvite(code);
+    if (!this.sys.isActive() || this.started) return;
+    this.teamCardOpen = true;
+    const cx = DESIGN_W / 2;
+    const cy = 940;
+    const usable = preview.status === 'valid';
+    const teamName = preview.teamName ?? 'لشکر';
+    const veil = this.add.rectangle(0, 0, DESIGN_W, DESIGN_H, 0x04060f, 0.76).setOrigin(0).setDepth(60).setInteractive();
+    const panel = this.add.image(cx, cy, panelTex(this, 940, 560)).setDepth(61);
+    const title = gradientText(this.add.text(cx, cy - 186, 'دعوت هم‌رزم', {
+      fontFamily: FONT_FAMILY, fontSize: '54px', fontStyle: '900', rtl: true, stroke: '#2a1204', strokeThickness: 8,
+      padding: { top: 10, bottom: 16, left: 10, right: 10 },
+    }).setOrigin(0.5).setDepth(62), ['#fff4e0', '#ffd27a', '#b07018']);
+    const line = this.add.text(cx, cy - 70, usable
+      ? `${preview.inviterName ?? 'یک هم‌رزم'} تو را به لشکر «${teamName}» فراخواند`
+      : INVITE_STATUS_TEXT[preview.status], {
+      fontFamily: FONT_FAMILY, fontSize: '34px', fontStyle: '900', color: '#f3dca0', rtl: true,
+      align: 'center', wordWrap: { width: 800 },
+    }).setOrigin(0.5).setDepth(62);
+    const sub = this.add.text(cx, cy + 30, usable ? INVITE_CONFIRM_HINT : '', {
+      fontFamily: FONT_FAMILY, fontSize: '26px', fontStyle: '700', color: '#b9c3e6', rtl: true, align: 'center',
+      wordWrap: { width: 800 },
+    }).setOrigin(0.5).setDepth(62);
+    const parts: Phaser.GameObjects.GameObject[] = [veil, panel, title, line, sub];
+
+    let closed = false;
+    let busy = false;
+    const close = (): void => {
+      if (closed) return;
+      closed = true;
+      this.teamCardOpen = false;
+      this.tweens.add({ targets: parts, alpha: 0, duration: 180, onComplete: () => parts.forEach((p) => p.destroy()) });
+    };
+
+    // «بعداً» / «باشه»: the invite is left unused, and this session stops asking about it.
+    const later = new Button(this, usable ? cx + 190 : cx, cy + 168, usable ? 340 : 380, 112, usable ? 'بعداً' : 'باشه', () => {
+      forgetTeamInvite(code);
+      close();
+    }, 'lapis').setDepth(63);
+    parts.push(later);
+
+    if (usable) {
+      const join = new Button(this, cx - 190, cy + 168, 360, 112, 'بپیوند', () => {
+        if (busy || closed) return;
+        busy = true;
+        join.setLabel('در حال پیوستن…').disableInteractive();
+        void services.team.join(code).then((team) => {
+          if (closed) return;
+          forgetTeamInvite(code);
+          services.audio.play('victory');
+          services.haptics.play('heavy');
+          title.setText('به لشکر پیوستی!');
+          line.setText(`تو حالا هم‌رزم «${team.name}» هستی`);
+          sub.setText(`${faNum(team.members.length)} هم‌رزم در این لشکر`);
+          join.setVisible(false);
+          later.setLabel('باشه').setX(cx);
+          this.refreshChip();
+        }).catch((err: unknown) => {
+          busy = false;
+          if (closed) return;
+          services.audio.play('ui');
+          line.setText(teamErrorText(err instanceof TeamApiError ? err.code : undefined));
+          sub.setText('');
+          join.setVisible(false);
+          later.setLabel('باشه').setX(cx);
+        });
+      }, 'gold').setDepth(63);
+      parts.push(join);
+    }
+
+    parts.forEach((p) => (p as Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Alpha).setAlpha(0));
+    this.tweens.add({ targets: parts, alpha: 1, duration: 260, ease: 'Cubic.easeOut' });
+  }
+
+  /** Re-draws the group chip after the roster changed (the player just joined a team). */
+  private refreshChip(): void {
+    if (this.chip) {
+      this.layer = this.layer.filter((o) => o !== this.chip);
+      this.tweens.killTweensOf(this.chip);
+      this.chip.destroy();
+      this.chip = null;
+    }
+    if (this.sys.isActive() && !this.started) void this.buildChip(this.topInset);
   }
 
   // ---------------------------------------------------------------- the menu
@@ -404,6 +510,11 @@ export class TitleScene extends Phaser.Scene {
     this.layer.push(ring, halo, btn);
   }
 
+  /** True while the team-invite card is unanswered (it owns the screen and the tap on «نبرد!»). */
+  private isTeamCardOpen(): boolean {
+    return this.teamCardOpen;
+  }
+
   private async buildBest(): Promise<void> {
     const p = await services.game.getProfile();
     // The invite ribbon (opened from a friend's link) takes this spot when there is one.
@@ -458,6 +569,7 @@ export class TitleScene extends Phaser.Scene {
     const chip = this.add.container(DESIGN_W - 36, 92 + top, [bg, ...avatars.reverse(), nameT, countT]).setSize(w, h).setAlpha(0);
     // The chip is drawn leftward from its anchor; hit shapes are measured from the container's top-left.
     chip.setInteractive(new Phaser.Geom.Rectangle(-w / 2, 0, w, h), Phaser.Geom.Rectangle.Contains);
+    this.chip = chip;
     this.tweens.add({ targets: chip, alpha: 1, x: { from: DESIGN_W + 200, to: DESIGN_W - 36 }, duration: 600, delay: 1300, ease: 'Back.easeOut' });
     // Tap: the members hop one by one, like a roll call.
     chip.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
@@ -473,7 +585,7 @@ export class TitleScene extends Phaser.Scene {
   // ---------------------------------------------------------------- start
 
   private start(): void {
-    if (this.started || this.scene.isActive('Eras')) return;
+    if (this.started || this.isTeamCardOpen() || this.scene.isActive('Eras')) return;
     this.started = true;
     services.audio.unlock();
     services.audio.play('battle');

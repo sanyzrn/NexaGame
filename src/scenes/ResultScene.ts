@@ -6,7 +6,10 @@ import { FEEL } from '../config/feel';
 import type { School } from '../config/team';
 import { PERFECT_CHEER } from '../data/lines';
 import { services } from '../services';
+import { appLink, encodeStartParam } from '../services/links';
 import { shareTicket } from '../services/Share';
+import { TeamApiError } from '../services/TeamApi';
+import { teamErrorText } from '../services/teamText';
 import { isPerfect, reactionsFor, type RunStats } from '../systems/score';
 import { Button } from '../ui/Button';
 import { GroupBar } from '../ui/GroupBar';
@@ -494,7 +497,31 @@ export class ResultScene extends Phaser.Scene {
     this.scene.launch('Card', { card: data, damage: d.stats.groupDamage });
   }
 
+  /**
+   * «دعوت هم‌رزم»: a real team invitation when Telegram sign-in is available — the player's team is
+   * created on the first invite, and the link carries a single-use code that expires in 24 hours.
+   * Without sign-in (a browser, or a build without the backend) this stays the demo's web link so
+   * the game is still playable and shareable.
+   */
   private async invite(): Promise<void> {
+    const teamApi = services.team;
+    if (teamApi.available) {
+      try {
+        const team = teamApi.team ?? (await teamApi.createTeam(`لشکر ${teamApi.playerName}`));
+        const invite = await teamApi.createInvite();
+        const url = appLink(encodeStartParam({ kind: 'team', code: invite.code }));
+        const text = `${teamApi.playerName} تو را به لشکر «${team.name}» در «درفش» فراخواند. بیا با هم دیو سپید را شکست بدهیم 🏹`;
+        const out = await shareTicket({ kind: 'link', url, text });
+        if (out === 'copied') this.say('لینک دعوت کپی شد؛ تا ۲۴ ساعت معتبر است');
+        else if (out === 'telegram' || out === 'native') this.say('دعوت تا ۲۴ ساعت معتبر است');
+        else this.say('اشتراک‌گذاری در این مرورگر ممکن نشد');
+        return;
+      } catch (err) {
+        // The reason matters more than a silent fallback: «used», «full», «no team» … are distinct.
+        this.say(teamErrorText(err instanceof TeamApiError ? err.code : undefined));
+        return;
+      }
+    }
     const ticket = await services.game.prepareInvite(this.d.groupName);
     const out = await shareTicket(ticket);
     if (out === 'copied') this.say('لینک دعوت کپی شد؛ برای هم‌رزمت بفرست!');

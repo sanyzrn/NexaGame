@@ -1,9 +1,27 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.0';
+import {
+  inviteStatusError,
+  createInvite,
+  createTeam,
+  loadTeam,
+  previewInvite,
+  redeemInvite,
+  TeamError,
+} from './teams.ts';
 
-// Telegram Mini App identity is authenticated here, never in the browser.
+// Telegram Mini App identity is authenticated here, never in the browser. Team membership rides
+// on the same verified identity: the client sends its initData with every call, so nothing it can
+// forge (a player id, a team id) is ever trusted.
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
 const BASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
-const ORIGIN = 'https://game.realmetaverse.ir';
+// The game's own origins only (production by default; add the tunnel/preview URL for testing).
+const DEFAULT_ORIGIN = 'https://game.realmetaverse.ir';
+const ALLOWED_ORIGINS = new Set(
+  (Deno.env.get('ALLOWED_ORIGINS') ?? DEFAULT_ORIGIN)
+    .split(',')
+    .map((value) => value.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
+);
 let secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 try { secret = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}').default || secret; } catch { /* fall back to legacy */ }
 const ready = () => Boolean(BOT_TOKEN && BASE_URL && secret);
@@ -11,12 +29,15 @@ const db = ready() ? createClient(BASE_URL, secret, { auth: { persistSession: fa
 const enc = new TextEncoder();
 const MAX_AGE = 3600; // An initData payload expires after 1 hour; reopen the Mini App.
 
+/** Team endpoints. Sign-in is the call with no action. */
+const ACTIONS = new Set(['team.create', 'team.invite', 'team.invite_info', 'team.join', 'team.state']);
+
 function headers(origin: string | null) {
   const h: Record<string, string> = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Vary': 'Origin', 'X-Content-Type-Options': 'nosniff' };
-  if (origin === ORIGIN) {
-    h['Access-Control-Allow-Origin'] = ORIGIN;
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    h['Access-Control-Allow-Origin'] = origin;
     h['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
-    h['Access-Control-Allow-Headers'] = 'content-type';
+    h['Access-Control-Allow-Headers'] = 'content-type, apikey, authorization, x-client-info';
     h['Access-Control-Max-Age'] = '600';
   }
   return h;
@@ -25,7 +46,7 @@ function respond(origin: string | null, status: number, payload: Record<string, 
   return new Response(JSON.stringify(payload), { status, headers: headers(origin) });
 }
 async function mac(key: Uint8Array, text: string) {
-  const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const cryptoKey = await crypto.subtle.importKey('raw', key as unknown as BufferSource, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(text)));
 }
 function constantTimeHexEqual(actual: string, digest: Uint8Array) {
@@ -80,16 +101,21 @@ async function selftest() {
   return { verified, tamperRejected, expiryRejected, duplicateRejected };
 }
 
+/** The roster plus the caller's player record, the shape every team response uses. */
+function playerView(player: { telegram_id: number; first_name: string; username: string | null }, joinedAt?: string) {
+  return { id: String(player.telegram_id), firstName: player.first_name, username: player.username, joinedAt };
+}
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin');
   const url = new URL(req.url);
-  if (req.method === 'GET' && url.searchParams.has('health')) return respond(origin, 200, { version: '1.0', configured: ready() });
+  if (req.method === 'GET' && url.searchParams.has('health')) return respond(origin, 200, { version: '1.1', configured: ready(), teams: ready() });
   if (req.method === 'GET' && url.searchParams.has('selftest')) {
     try { const checks = await selftest(); return respond(origin, Object.values(checks).every(Boolean) ? 200 : 500, checks); }
     catch { return respond(origin, 500, { error: 'SELFTEST_FAILED' }); }
   }
-  if (origin && origin !== ORIGIN) return respond(origin, 403, { error: 'ORIGIN_NOT_ALLOWED' });
-  if (req.method === 'OPTIONS') return origin === ORIGIN ? new Response(null, { status: 204, headers: headers(origin) }) : respond(origin, 403, { error: 'ORIGIN_NOT_ALLOWED' });
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return respond(origin, 403, { error: 'ORIGIN_NOT_ALLOWED' });
+  if (req.method === 'OPTIONS') return origin ? new Response(null, { status: 204, headers: headers(origin) }) : respond(origin, 403, { error: 'ORIGIN_NOT_ALLOWED' });
   if (req.method !== 'POST') return respond(origin, 405, { error: 'METHOD_NOT_ALLOWED' });
   if (!ready() || !db) return respond(origin, 503, { error: 'NOT_CONFIGURED' });
   if (!req.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return respond(origin, 415, { error: 'JSON_REQUIRED' });
@@ -98,10 +124,57 @@ Deno.serve(async (req: Request) => {
   try { const body = await req.text(); if (body.length > 16000) throw Error(); input = JSON.parse(body); }
   catch { return respond(origin, 400, { error: 'BAD_REQUEST' }); }
   if (!input || typeof input !== 'object' || typeof (input as { initData?: unknown }).initData !== 'string') return respond(origin, 400, { error: 'BAD_REQUEST' });
+  const action = (input as { action?: unknown }).action;
+  if (action !== undefined && (typeof action !== 'string' || !ACTIONS.has(action))) return respond(origin, 400, { error: 'UNKNOWN_ACTION' });
   let player;
   try { player = await verifyInitData((input as { initData: string }).initData, BOT_TOKEN, Math.floor(Date.now() / 1000)); }
   catch (err) { return respond(origin, 401, { error: String(err) === 'Error: EXPIRED_INIT_DATA' ? 'EXPIRED_INIT_DATA' : 'INVALID_INIT_DATA' }); }
   const { data, error } = await db.from('game_players').upsert({ ...player, last_seen_at: new Date().toISOString() }, { onConflict: 'telegram_id' }).select('telegram_id,first_name,username,created_at').single();
   if (error || !data) { console.error('GAME_PLAYER_SAVE', error?.code ?? 'NO_DATA'); return respond(origin, 500, { error: 'SAVE_FAILED' }); }
-  return respond(origin, 200, { ok: true, player: { id: String(data.telegram_id), firstName: data.first_name, username: data.username, joinedAt: data.created_at } });
+  const joinedAt = String(data.created_at);
+
+  // No action: Telegram sign-in. Returns who you are and the team you are already in.
+  if (!action) {
+    try {
+      return respond(origin, 200, { ok: true, player: playerView(player, joinedAt), team: await loadTeam(db, player.telegram_id) });
+    } catch (err) {
+      console.error('TEAM_STATE', err instanceof TeamError ? err.code : 'UNKNOWN');
+      return respond(origin, 200, { ok: true, player: playerView(player, joinedAt), team: null });
+    }
+  }
+
+  const body = input as { name?: unknown; code?: unknown };
+  try {
+    switch (action) {
+      case 'team.create': {
+        const team = await createTeam(db, player, body.name);
+        return respond(origin, 200, { ok: true, player: playerView(player, joinedAt), team });
+      }
+      case 'team.invite': {
+        const invite = await createInvite(db, player);
+        return respond(origin, 200, { ok: true, code: invite.code, expiresAt: invite.expiresAt, team: await loadTeam(db, player.telegram_id) });
+      }
+      case 'team.invite_info': {
+        const info = await previewInvite(db, body.code, player.telegram_id);
+        return respond(origin, 200, { ok: true, invite: info });
+      }
+      case 'team.join': {
+        const result = await redeemInvite(db, player, body.code);
+        if (result.status !== 'joined' && result.status !== 'already_joined' && result.status !== 'already_member') {
+          return respond(origin, 409, { ok: false, error: inviteStatusError(result.status) });
+        }
+        return respond(origin, 200, { ok: true, status: result.status, player: playerView(player, joinedAt), team: result.team });
+      }
+      case 'team.state':
+      default:
+        return respond(origin, 200, { ok: true, player: playerView(player, joinedAt), team: await loadTeam(db, player.telegram_id) });
+    }
+  } catch (err) {
+    if (err instanceof TeamError) {
+      console.error('TEAM_ACTION', action, err.code);
+      return respond(origin, err.status, { ok: false, error: err.code });
+    }
+    console.error('TEAM_ACTION', action, 'UNKNOWN');
+    return respond(origin, 500, { ok: false, error: 'STORE_FAILED' });
+  }
 });

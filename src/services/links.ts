@@ -7,7 +7,18 @@ import { APP } from '../config/app';
 export type StartParam =
   | { kind: 'challenge'; score: number; name: string }
   | { kind: 'invite'; from: string }
+  /** A real team invite: the code is redeemed server-side after the player confirms. */
+  | { kind: 'team'; code: string }
   | null;
+
+/** Team invites already answered this session, so the card does not ask again after a rebuild. */
+const answeredTeamInvites = new Set<string>();
+
+/** Marks a team invite as answered (joined, declined, or refused) for the rest of the session. */
+export function forgetTeamInvite(code: string): void {
+  const clean = code.trim().toUpperCase();
+  if (clean) answeredTeamInvites.add(clean);
+}
 
 const MAX_NAME = 14;
 /** Telegram's limit for a start parameter; a longer one is dropped by the client. */
@@ -41,6 +52,7 @@ function fitParam(name: string, build: (name: string) => string): string {
 }
 
 export function encodeStartParam(p: NonNullable<StartParam>): string {
+  if (p.kind === 'team') return `t_${p.code.trim().toUpperCase()}`;
   if (p.kind === 'challenge') {
     const score = Math.max(0, Math.round(p.score));
     return fitParam(p.name, (n) => `c_${score}_${b64url(n)}`);
@@ -60,6 +72,10 @@ export function parseStartParam(raw: string | null | undefined): StartParam {
     if (head <= 0) return null;
     const kind = raw.slice(0, head);
     const rest = raw.slice(head + 1);
+    if (kind === 't') {
+      const code = rest.trim().toUpperCase();
+      return /^[A-Z0-9]{4,16}$/.test(code) ? { kind: 'team', code } : null;
+    }
     if (kind === 'c') {
       const sep = rest.indexOf('_');
       if (sep <= 0) return null;
@@ -103,11 +119,16 @@ export function appLink(param: string | null, pageUrl: string = location.href): 
 
 /** The start parameter this session was opened with (Telegram, or ?startapp= in a browser). */
 export function readStartParam(tgParam: string | null): StartParam {
-  if (tgParam) return parseStartParam(tgParam);
-  try {
-    const q = new URLSearchParams(location.search);
-    return parseStartParam(q.get('startapp') ?? q.get('tgWebAppStartParam'));
-  } catch {
-    return null;
-  }
+  const parsed = tgParam
+    ? parseStartParam(tgParam)
+    : (() => {
+        try {
+          const q = new URLSearchParams(location.search);
+          return parseStartParam(q.get('startapp') ?? q.get('tgWebAppStartParam'));
+        } catch {
+          return null;
+        }
+      })();
+  if (parsed?.kind === 'team' && answeredTeamInvites.has(parsed.code)) return null;
+  return parsed;
 }
