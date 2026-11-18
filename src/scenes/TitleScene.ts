@@ -276,9 +276,14 @@ export class TitleScene extends Phaser.Scene {
     services.audio.unlock();
     services.audio.play('ui');
     this.setUiVisible(false);
+    const openedFrom = currentIndex();
     this.scene.launch('Eras', {
       onPick: (index: number) => this.switchEra(index),
-      onClose: () => this.setUiVisible(true),
+      onClose: () => {
+        const selected = currentIndex();
+        if (selected !== openedFrom) this.rebuild(loadEraArt(this, ERAS[selected]));
+        else this.setUiVisible(true);
+      },
     });
   }
 

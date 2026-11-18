@@ -120,12 +120,12 @@ export class Hazards {
   }
 
   /** The White Div hurls a chunk of the wall. */
-  boulder(fromX: number, fromY: number, toX: number, toY: number): void {
+  boulder(fromX: number, fromY: number, toX: number, toY: number, glowTint?: number): void {
     const B = BALANCE.boss.boulders;
-    this.launch('boulder', fromX, fromY, toX, toY, B.flightMs, B.arcPx, B.hp, B.radius);
+    this.launch('boulder', fromX, fromY, toX, toY, B.flightMs, B.arcPx, B.hp, B.radius, glowTint);
   }
 
-  private launch(kind: HazardKind, x0: number, y0: number, x1: number, y1: number, ms: number, arcPx: number, hp: number, radius: number): void {
+  private launch(kind: HazardKind, x0: number, y0: number, x1: number, y1: number, ms: number, arcPx: number, hp: number, radius: number, glowTint = 0xb35cd1): void {
     const h = this.items.find((q) => !q.active && q.kind === kind);
     if (!h) return;
     h.active = true;
@@ -145,7 +145,7 @@ export class Hazards {
     h.trailT = 0;
     h.img.setVisible(true).setPosition(x0, y0).setRotation(Math.random() * Math.PI).clearTint().setAlpha(1)
       .setDisplaySize(radius * 2, radius * 2);
-    h.glow.setVisible(kind === 'boulder').setTint(0xb35cd1).setPosition(x0, y0).setScale(radius / 26);
+    h.glow.setVisible(kind === 'boulder').setTint(glowTint).setPosition(x0, y0).setScale(radius / 26);
     h.warn.setVisible(kind === 'boulder').setPosition(x1, y1).setTint(0xff5a3a).setAlpha(FEEL.hazards.warn.alpha);
     const ss = (radius / 64) * FEEL.hazards.boulder.shadowScale;
     h.shadow.setVisible(true).setPosition(x1, y1).setAlpha(0.3).setScale(ss, ss * 0.5);

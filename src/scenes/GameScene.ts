@@ -40,7 +40,7 @@ import { Surprises } from '../systems/Surprises';
 import { Happenings } from '../systems/Happenings';
 import { pickGait } from '../systems/gaits';
 import type { MoodDef } from '../data/moods';
-import { completeEra, currentEra, unlockedIndex } from '../systems/eraProgress';
+import { completeEra, currentEra, isEraTestMode, unlockedIndex } from '../systems/eraProgress';
 import { readStartParam } from '../services/links';
 import { WaveSystem, type WaveInfo } from '../systems/WaveSystem';
 import { DamageNumbers } from '../ui/DamageNumbers';
@@ -150,6 +150,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
   private omen: OmenDef | null = null;
   /** The era being fought in (art skin, waves, rule, boss name). */
   private era!: EraDef;
+  private testRun = false;
+  private armorTipShown = false;
   /** The era's rule combined with the day's omen. */
   private rules: OmenMods = {};
   /** The run's time of day / season (data/moods.ts). */
@@ -204,6 +206,8 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     // The omen of the day (same for the whole group; ?omen=<id> overrides, ?omen= turns it off).
     this.omen = pickOmen(new Date(), new URLSearchParams(window.location.search).get('omen'));
     this.era = currentEra();
+    this.testRun = isEraTestMode();
+    this.armorTipShown = false;
     const diff = services.settings.difficulty;
     this.rules = combineMods(combineMods(this.era.mods, this.omen?.mods), { enemySpeedMul: diff.enemySpeedMul, scoreMul: diff.scoreMul });
     applyEraArt(this, this.era);
@@ -653,7 +657,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if ((homaGuaranteed || (FEEL.surprises.homa.enabled && Math.random() < BALANCE.surprises.homa.chancePerRun))) {
       this.homaAt = BALANCE.surprises.homa.afterMs;
     }
-    if (services.settings.tutorialDone) {
+    if (this.testRun || services.settings.tutorialDone) {
       this.waves.start();
       return;
     }
@@ -837,7 +841,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     cam.pan(DESIGN_W / 2, I.focusY, I.pushMs, 'Sine.easeInOut');
     this.boss.startIntro();
     // After the first time, a tap skips it.
-    if (services.settings.bossIntroSeen) {
+    if (this.testRun || services.settings.bossIntroSeen) {
       this.input.once(Phaser.Input.Events.POINTER_DOWN, () => this.boss.skipIntro());
     }
   }
@@ -900,7 +904,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       this.atmosphere.darken(0, I.returnMs);
       this.collider.setTop(FIGHT_TOP);
       this.aim.enabled = !this.defeated;
-      services.settings.markBossIntroSeen();
+      if (!this.testRun) services.settings.markBossIntroSeen();
     });
     boss.onSummonStart.add(() => services.audio.play('summon'));
     boss.onSummon.add((n) => {
@@ -913,9 +917,20 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
           : ['imp', 'imp', 'bomber'];
       this.waves.summon(n, ARENA.summonPoints, types);
     });
+    const sasanian = this.era.id === 'sasanian';
     boss.onBoulder.add(({ x, y, fury }) => {
       services.audio.play('boulder', fury ? 1.3 : 1);
       services.haptics.play('heavy');
+      if (sasanian) {
+        const left = boss.serpentMouth(0);
+        const right = boss.serpentMouth(1);
+        const landingY = ARENA.hero.y - 40;
+        const spread = fury ? 175 : 140;
+        this.hazards.boulder(left.x, left.y, this.hero.x + spread, landingY, 0x78e842);
+        this.hazards.boulder(right.x, right.y, this.hero.x - spread, landingY, 0x78e842);
+        if (fury) this.hazards.boulder(x, y, this.hero.x, landingY, 0x78e842);
+        return;
+      }
       const count = fury ? BALANCE.boss.boulders.furyCount : 1;
       for (let i = 0; i < count; i++) {
         const fromX = x + (i === 0 ? -170 : 170) + Phaser.Math.Between(-30, 30);
@@ -928,7 +943,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       // خشم خاکستری — ash fury: the last quarter of his life burns hotter.
       const F = FEEL.boss.fury;
       this.atmosphere.applyOmen(vGradientTex(this, 'ui_grad_fury', F.grade.top, F.grade.mid, F.grade.bottom), F.grade.alpha, 800);
-      this.hud.bigTitle('خشم خاکستری');
+      this.hud.bigTitle(sasanian ? 'خشم ماران' : 'خشم خاکستری');
       services.audio.play('battle');
       services.haptics.play('heavy');
       this.time.delayedCall(1500, () => this.atmosphere.applyOmen(this.runGrade() ? 'ui_grad_omen' : null, this.runGrade()?.alpha ?? 0, 900));
@@ -1040,6 +1055,10 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
 
     const t = e.target as Enemy;
     if (e.outcome === 'blocked') {
+      if (t.armored && !this.armorTipShown) {
+        this.armorTipShown = true;
+        this.hud.showToast('زرهٔ ساسانی', 'تا درخشش طلایی کمان نگه دار، بعد رها کن');
+      }
       fx.clang(t.shieldX, t.shieldY);
       fx.shake('hit');
       audio.play('clang');
@@ -1764,14 +1783,16 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
     if (this.bonusScore > 0) stats.score += this.bonusScore;
     const scoreMul = this.rules.scoreMul ?? 1;
     if (scoreMul !== 1) stats.score = Math.round(stats.score * scoreMul);
-    try {
-      const res = await services.game.submitRun({
-        score: stats.score, bestCombo: stats.bestCombo, crits: stats.goldenShots, shots: stats.shots, kills: stats.kills,
-        damage: stats.groupDamage, stars: stats.stars, durationMs: Math.round(this.runMs), won,
-      });
-      isNewBest = res.isNewBest;
-    } catch (err) {
-      console.warn('[run] submit failed', err);
+    if (!this.testRun) {
+      try {
+        const res = await services.game.submitRun({
+          score: stats.score, bestCombo: stats.bestCombo, crits: stats.goldenShots, shots: stats.shots, kills: stats.kills,
+          damage: stats.groupDamage, stars: stats.stars, durationMs: Math.round(this.runMs), won,
+        });
+        isNewBest = res.isNewBest;
+      } catch (err) {
+        console.warn('[run] submit failed', err);
+      }
     }
     const members = (group?.members ?? []).map((m) => ({ name: m.name, color: avatarColor(m), avatar: avatarTex(this, m) }));
     const data: ResultData = {
@@ -1788,7 +1809,7 @@ export class GameScene extends Phaser.Scene implements EnemyHooks {
       omen: this.omen ? { name: this.omen.name, line: this.omen.line } : null,
       moment: this.moments.bestMoment(),
       era: this.era,
-      nextEra: won ? this.openNextEra() : null,
+      nextEra: won && !this.testRun ? this.openNextEra() : null,
       challenge: (() => {
         const p = readStartParam(services.telegram.startParam);
         return p?.kind === 'challenge' ? { name: p.name, score: p.score } : null;

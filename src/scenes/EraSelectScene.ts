@@ -5,7 +5,8 @@ import { arenaPreviewKey } from '../assets/manifest';
 import { CALLIGRAPHY_FONT, DESIGN_H, DESIGN_W, FONT_FAMILY } from '../config/display';
 import { ERAS, type EraDef } from '../data/eras';
 import { services } from '../services';
-import { currentIndex, isUnlocked, unlockedIndex } from '../systems/eraProgress';
+import { canSelectEra, currentIndex, isEraTestMode, setEraTestMode, unlockedIndex } from '../systems/eraProgress';
+import { Button } from '../ui/Button';
 import { dividerTex, gradientText, shamsehTex, vGradientTex } from '../ui/kit';
 import { faNum } from '../utils/fa';
 
@@ -14,7 +15,7 @@ const CARD_W = 480;
 const CARD_H = 384;
 const GAP_X = 36;
 const GAP_Y = 34;
-const TOP = 400;
+const TOP = 460;
 const BOTTOM_PAD = 90;
 
 type CardState = 'current' | 'open' | 'locked' | 'soon';
@@ -80,9 +81,19 @@ export class EraSelectScene extends Phaser.Scene {
     }).setOrigin(0.5), ['#fff4e0', '#ffd88a', '#d89a50']);
     const open = Math.min(unlockedIndex() + 1, ERAS.filter((e) => e.playable).length);
     this.add.image(cx, 250 + top, dividerTex(this, 640));
-    this.add.text(cx, 300 + top, `${faNum(ERAS.length)} عصر، از هخامنشیان تا آینده · باز شده: ${faNum(open)}`, {
+    const testing = isEraTestMode();
+    const count = testing ? 'همهٔ عصرها قابل انتخاب‌اند · بدون ثبت امتیاز و پیشرفت' : `${faNum(ERAS.length)} عصر، از هخامنشیان تا آینده · باز شده: ${faNum(open)}`;
+    this.add.text(cx, 293 + top, count, {
       fontFamily: FONT_FAMILY, fontSize: '30px', fontStyle: '900', color: '#b9c3e6', rtl: true,
     }).setOrigin(0.5);
+    new Button(this, cx, 365 + top, 510, 102,
+      testing ? 'خروج از حالت آزمایش' : 'آزمایش همهٔ عصرها',
+      () => {
+        if (this.closing) return;
+        this.closing = true;
+        setEraTestMode(!testing);
+        this.scene.restart({ onPick: this.onPick, onClose: this.onClose });
+      }, testing ? 'gold' : 'lapis');
     title.setAlpha(0);
     this.tweens.add({ targets: title, alpha: 1, duration: 400 });
 
@@ -139,7 +150,7 @@ export class EraSelectScene extends Phaser.Scene {
     const e = ERAS[i];
     if (!e.playable) return 'soon';
     if (i === currentIndex()) return 'current';
-    return isUnlocked(i) ? 'open' : 'locked';
+    return canSelectEra(i) ? 'open' : 'locked';
   }
 
   private pos(i: number): { x: number; y: number } {

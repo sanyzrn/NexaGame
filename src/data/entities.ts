@@ -169,7 +169,7 @@ export const SHIELD_DISC = circle(38, -103, 55);
 
 export interface Point2 { x: number; y: number }
 
-/** Hit zones and attachment points of one White Div pose (source-box px, relative to the anchor). */
+/** Hit zones and attachment points of one boss pose (source-box px, relative to the anchor). */
 export interface BossPoseDef {
   /** Arrows hit this circle… */
   body: CircleBox;
@@ -217,3 +217,32 @@ export const BOSS = {
   /** Knuckles in the idle pose: slam dust and wall cracks. */
   knuckles: [{ x: -312, y: 50 }, { x: 368, y: 60 }] as readonly Point2[],
 } as const;
+
+
+export const ZAHHAK = {
+  zones: {
+    boss_idle: {
+      body: circle(10, -340, 300), gem: circle(17, -255, 54),
+      eyes: [{ x: -15, y: -552 }, { x: 37, y: -552 }], head: { x: 12, y: -553 },
+    },
+    boss_roar: {
+      body: circle(25, -345, 310), gem: circle(68, -226, 54),
+      eyes: [{ x: 17, y: -563 }, { x: 70, y: -561 }], head: { x: 45, y: -560 },
+    },
+    boss_stunned: {
+      body: circle(10, -310, 300), gem: circle(24, -196, 54),
+      eyes: [{ x: 0, y: -478 }, { x: 60, y: -473 }], head: { x: 28, y: -470 },
+    },
+  } as Readonly<Record<string, BossPoseDef>>,
+  armor: [
+    { x: -250, y: -367 }, { x: 246, y: -367 }, { x: -305, y: -163 }, { x: 300, y: -151 },
+    { x: -159, y: -337 }, { x: 165, y: -337 }, { x: -97, y: -238 }, { x: 104, y: -238 }, { x: 23, y: -120 },
+  ],
+  shine: [
+    [{ x: -348, y: -350 }, { x: -265, y: -407 }, { x: -155, y: -422 }],
+    [{ x: 146, y: -424 }, { x: 265, y: -403 }, { x: 350, y: -350 }],
+  ],
+  hand: { x: -162, y: -324 },
+  knuckles: [{ x: -270, y: -13 }, { x: 294, y: -10 }],
+  serpents: [{ x: -132, y: -554 }, { x: 153, y: -551 }],
+};

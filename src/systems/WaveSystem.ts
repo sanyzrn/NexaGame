@@ -161,6 +161,6 @@ export class WaveSystem {
   private spawn(s: ScheduledSpawn): void {
     const m = BALANCE.waves.sideMargin;
     const x = ARENA.walls.left + m + s.x * (ARENA.walls.right - ARENA.walls.left - m * 2);
-    this.freeEnemy().spawn(s.type, x, this.hpScale, undefined, { elite: s.elite, speedMul: this.mods.speedMul, gait: pickGait(s.type, this.variety) });
+    this.freeEnemy().spawn(s.type, x, this.hpScale, undefined, { elite: s.elite, armored: s.armored, speedMul: this.mods.speedMul, gait: pickGait(s.type, this.variety) });
   }
 }

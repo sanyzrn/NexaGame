@@ -39,6 +39,7 @@ export interface SpawnOptions {
   golden?: boolean;
   /** A gold-trimmed veteran: more hp, a little faster, guaranteed drop. */
   elite?: boolean;
+  armored?: boolean;
   /** Walk-speed multiplier (the omen of the day). */
   speedMul?: number;
   /** How it travels down the arena (see systems/gaits.ts); a straight march when omitted. */
@@ -185,6 +186,9 @@ export class Enemy implements Target {
   // M6: elites, fire, and the three new types
   /** Gold-trimmed veteran (hp×, scale×, guaranteed drop). */
   elite = false;
+  private armor: 'standard' | 'intact' | 'broken' = 'standard';
+
+  get armored(): boolean { return this.armor === 'intact'; }
   private burnLeft = 0;
   private burnTickT = 0;
   // slinger
@@ -267,7 +271,8 @@ export class Enemy implements Target {
     return this.ay + SHIELD_DISC.y;
   }
 
-  blocks(_dirX: number, dirY: number, _crit = false): boolean {
+  blocks(_dirX: number, dirY: number, crit = false): boolean {
+    if (this.armor !== 'standard') return this.armored && !crit;
     // Shield-bearers face the hero: anything arriving head-on hits the shield.
     return this.type === 'shield' && -dirY > Math.cos(BALANCE.enemies.shield.frontalDeg * DEG);
   }
@@ -280,6 +285,7 @@ export class Enemy implements Target {
     const E = FEEL.enemy;
     this.golden = !!opts?.golden;
     this.elite = !!opts?.elite;
+    this.armor = type === 'shield' && opts?.armored ? 'intact' : 'standard';
     this.fleeing = false;
     this.stunLeft = this.pushLeft = this.slowLeft = 0;
     this.type = type;
@@ -350,7 +356,7 @@ export class Enemy implements Target {
     const E = FEEL.enemy;
     const kb = E.knockbackPx * (hit.crit ? 1.8 : 1);
 
-    if (this.blocks(hit.dirX, hit.dirY)) {
+    if (this.blocks(hit.dirX, hit.dirY, hit.crit)) {
       this.raise = 1;
       this.kbX += hit.dirX * kb * 0.4;
       this.kbY += hit.dirY * kb * 0.4;
@@ -358,6 +364,7 @@ export class Enemy implements Target {
       return 'blocked';
     }
 
+    if (this.armored && hit.crit) this.armor = 'broken';
     this.hp = Math.max(0, this.hp - hit.damage);
     if (hit.fire) this.ignite();
     this.flashLeft = E.hitFlashMs;
@@ -973,6 +980,10 @@ export class Enemy implements Target {
       const g = this.raise * (0.55 + 0.45 * Math.sin(this.life / 70));
       this.glint.setVisible(true).setPosition(this.shieldX, this.shieldY - lift).setTint(0xfff0b0).setAlpha(g)
         .setScale(0.7 + 0.5 * this.raise).setRotation(this.life / 300).setDepth(this.img.depth + 0.1);
+    } else if (this.armored && this.state !== State.Lunging) {
+      const pulse = 0.5 + 0.35 * Math.sin(this.life / 210);
+      this.glint.setVisible(true).setPosition(this.shieldX, this.shieldY - lift).setTint(0xffcf64)
+        .setAlpha(pulse).setScale(0.67).setRotation(this.life / 900).setDepth(this.img.depth + 0.1);
     } else if (this.type === 'slinger' && this.throwT > 0 && this.state !== State.Lunging) {
       // The stone whirls overhead in its sling.
       const k = 1 - this.throwT / BALANCE.enemies.slinger.windupMs;
