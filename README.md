@@ -100,13 +100,76 @@ Numbers are in `BALANCE.power`; visuals, including the palettes that would becom
 
 ## Challenge and invite links
 
-The Hero Card share carries a challenge («رکوردم را بزن»: score + name); «دعوت هم‌رزم» carries an invite. Both travel in Telegram's start parameter. A friend who opens one sees who sent them on the title, and the Result tells them whether they beat the score. For real Telegram deep links, build with the bot's username (and the Mini App's short name, if it has one):
+The Hero Card share carries a challenge («رکوردم را بزن»: score + name); «دعوت هم‌رزم» carries an invite. Both travel in Telegram's `startapp` parameter: a friend who opens one sees the inviter's name on the title ribbon (and in the invite message itself), and the Result tells them whether they beat the challenge.
+
+### Build with bot settings (links open the Mini App directly)
 
 ```bash
 VITE_TG_BOT=YourBot VITE_TG_APP=darafsh npm run build
 ```
 
-Without them, links point at the page itself with `?startapp=…`, which the game reads the same way (handy for testing in a browser).
+- `VITE_TG_BOT` — the bot's username. `YourBot`, `@YourBot` or `https://t.me/YourBot` all work.
+- `VITE_TG_APP` — the Mini App's short name from BotFather (*Bot Settings → Configure Mini App*). With it, links are `https://t.me/<bot>/<app>?startapp=…`; without it, `https://t.me/<bot>?startapp=…`, which opens the bot's Main Mini App.
+- Both values are cleaned and validated at build time; a pasted full link such as `https://t.me/YourBot/darafsh` fills in both. An invalid value is ignored instead of being baked into a dead `t.me` link.
+
+The bot must have its Mini App configured in BotFather, pointed at the deployed HTTPS URL; otherwise `t.me/<bot>/<app>` has nothing to open. The game's start parameter is read from `initDataUnsafe.start_param`, which Telegram fills from `?startapp=`.
+
+**Where to set them:** locally in `.env` (copy `.env.example`); in CI as repository *Variables* `VITE_TG_BOT` / `VITE_TG_APP` (`.github/workflows/deploy.yml` passes them to `npm run build` and reports which mode the build used, failing if the bot name never reaches the bundle); on Vercel / Cloudflare Pages as project environment variables. They are baked in at build time, so changing one needs a rebuild — run the deploy workflow manually (*Run workflow*) if a push does not trigger one.
+
+### Build without bot settings (the default)
+
+With no bot variables, `npm run build` keeps the plain web links: `https://<page>/?startapp=…`, which the game reads the same way. That is the mode for local development, browser previews and any deployment without a bot.
+
+### Test the invite with two Telegram accounts
+
+1. Build with both variables set and deploy (or run `npm run dev` + `npm run tunnel` and point BotFather at the tunnel URL). Confirm the bot's Mini App opens from `https://t.me/<bot>/<app>` before testing the invite.
+2. **Account A (inviter):** open the game in Telegram, finish a run, tap «دعوت هم‌رزم».
+   - The share sheet text starts with A's first name: «<نام A> تو را به لشکر «…» در «درفش» فراخواند…».
+   - Send it to **Account B** (B can also be opened on Telegram Desktop while A stays on the phone). The link inside is `https://t.me/<bot>/<app>?startapp=i_…`.
+3. **Account B (invitee):** tap the link in the message.
+   - It must open **inside Telegram** as the Mini App, not in a browser tab.
+   - The title shows the ribbon «<نام A> تو را به لشکر فراخواند!».
+   - If a browser page opens instead, the bot's Mini App URL/short name in BotFather is wrong.
+   - If the ribbon is missing, the build had no bot settings (web-link mode) or something stripped the `startapp` query (a link shortener).
+4. **Account B** finishes a run and taps «دعوت هم‌رزم»: the new message carries **B's** name, proving the name comes from the sender's profile, not from the link that brought them in.
+5. **Account A** shares the Hero Card: B should see «<نام A> تو را به چالش کشید: رکوردش …» on the title and the score comparison on the Result.
+
+For a browser-only run (no second Telegram account), `npm run dev` then open `http://localhost:5173/?startapp=i_…` in a normal browser — the same start parameter drives the same ribbon.
+
+## Telegram sign-in and real teams
+
+With a backend configured, opening the game from Telegram signs the player in and their real team replaces the demo line-up:
+
+- **Sign-in** — the Mini App's `initData` goes to the Supabase Edge Function `game-auth`, which verifies it with the bot token inside Telegram's HMAC and upserts `game_players`. The browser never sees a database key, and no player id it could forge is trusted: every call re-verifies `initData`.
+- **One team per player** — «دعوت هم‌رزم» on the Result screen creates the player's team on the first use (named «لشکر <نام>»), then mints a single-use invite code that expires after 24 hours and shares `https://t.me/<bot>/<app>?startapp=t_<code>`.
+- **Joining takes a confirmation** — the invitee sees «<نام دعوت‌کننده> تو را به لشکر «…» فراخواند» with «بپیوند» / «بعداً», and only «بپیوند» redeems the code. The group chip then shows the real roster (names and avatars); schools are assigned per member id, so a friend keeps the same colour.
+- **No real-time combat yet** — boss HP and the teammates' damage are still simulated. Only membership and the roster are real.
+- **The browser demo is unchanged** — without Telegram sign-in the game plays exactly as before with the demo group, and «دعوت هم‌رزم» shares the plain page link.
+
+### Backend setup
+
+1. **Database** — apply [`supabase/migrations/20261118000000_game_teams.sql`](supabase/migrations/20261118000000_game_teams.sql) (`supabase db push`, or paste it into the project's SQL editor). It creates `game_teams`, `game_team_members`, `game_team_invites`, enables RLS with **no** policies (so the anon key can read nothing), and adds two atomic RPCs: `game_create_team` and `game_redeem_team_invite` (row-locked, so two phones cannot use one code).
+2. **Function** — deploy `game-auth`: `supabase functions deploy game-auth`. Its secrets: `TELEGRAM_BOT_TOKEN` (required), and optionally `ALLOWED_ORIGINS` — a comma-separated allow-list, default `https://game.realmetaverse.ir`. Add your tunnel/preview origin while testing (e.g. `https://random-words.trycloudflare.com,https://game.realmetaverse.ir`), otherwise CORS refuses the request.
+3. **Check it** — `GET .../functions/v1/game-auth?health` → `{"configured":true}`; `GET ...?selftest` → `{"verified":true,"tamperRejected":true,"expiryRejected":true,"duplicateRejected":true}`.
+4. **Build settings** — copy [`.env.example`](.env.example) to `.env` and set `VITE_GAME_API_URL=https://<project-ref>.supabase.co/functions/v1/game-auth` and `VITE_SUPABASE_ANON_KEY=<anon key>`, plus `VITE_TG_BOT` / `VITE_TG_APP` (see [Challenge and invite links](#challenge-and-invite-links)). In CI these come from repository Variables/Secrets of the same names; on Vercel / Cloudflare Pages from the project's environment variables. They are baked in at build time — rebuild after changing one.
+5. **BotFather** — the Mini App must be configured and pointed at the deployed HTTPS URL, so `t.me/<bot>/<app>` opens the game and passes `startapp`.
+
+Team API (all `POST` with `{ initData, action, … }`, answered by `game-auth`): `team.create`, `team.invite`, `team.invite_info`, `team.join`, `team.state`. Errors come back as stable codes (`INVITE_INVALID`, `INVITE_EXPIRED`, `INVITE_USED`, `TEAM_FULL`, `ALREADY_IN_TEAM`, …) that the game turns into its own Persian line.
+
+### Two-account Telegram test checklist
+
+Setup: two Telegram accounts (A and B, e.g. a phone and Telegram Desktop), the build from step 4 deployed (or a tunnel whose origin is in `ALLOWED_ORIGINS`), and the bot's Mini App pointing at it.
+
+1. **Sign-in** — open the game as A inside Telegram. The title's group chip shows the demo roster (A has no team yet); no error appears.
+2. **Create + invite** — as A, finish a run and tap «دعوت هم‌رزم». The share sheet shows A's name and the link `…?startapp=t_XXXXXXXX`. A's team is now «لشکر <نام A>». Send the invite to B.
+3. **Invalid** — edit one character of the code in the link and open it as B: «این لینک دعوت معتبر نیست», nothing joins, the game is still playable.
+4. **Expired** — with a code from `game_team_invites`, run `update game_team_invites set expires_at = now() - interval '1 minute' where code = 'XXXXXXXX';` and open it as B: «این دعوت منقضی شده…».
+5. **Confirm** — open the real invite as B: the card says «<نام A> تو را به لشکر «لشکر <نام A>» فراخواند». Tap «بعداً» once: nothing joins. Reopen the link and tap «بپیوند»: «به لشکر پیوستی!» and B's chip now shows the team with both names.
+6. **Repeated use** — open the same link again as B: «قبلاً با همین دعوت به لشکر پیوستی» (no duplicate member). Open it as a third account C: «این دعوت قبلاً استفاده شده» — one code, one join.
+7. **Roster** — as A, rebuild/reopen the game: the chip shows B in the roster (2 هم‌رزم). A run still works, and the teammates' damage stays simulated (expected for this task).
+8. **One team per player** — as B, finish a run and tap «دعوت هم‌رزم»: B's own new code invites to B's team (A's team), proving membership is per player.
+9. **Browser demo** — open the same deployment in a normal browser: playable, demo roster, «دعوت هم‌رزم» shares a page link (no sign-in).
+10. **Server check** — `select team_id, telegram_id, joined_at from game_team_members order by joined_at;` has exactly two rows; `game_team_invites.used_at` is set for the redeemed code.
 
 ## Team feel (simulated group)
 

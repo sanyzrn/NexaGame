@@ -63,6 +63,9 @@ function wireBootErrorHandling(): void {
 async function start(): Promise<void> {
   services.telegram.init(COLORS.letterboxCss);
   services.safeArea.init();
+  // Telegram sign-in (game-auth) in parallel with boot: the title reads the real roster when it
+  // arrives, and the game is playable whether or not the backend answers.
+  void services.team.ready();
   wireBootErrorHandling();
   const [webp] = await Promise.all([detectWebp(), loadFonts()]);
   services.caps.webp = webp;
